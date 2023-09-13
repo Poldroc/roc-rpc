@@ -16,7 +16,7 @@ public class RpcInvocation {
         private String targetMethod;
 
         /**
-         * 请求的目标接口名称，例如：com.poldroc.rpc.framework.test.api.HelloService
+         * 请求的目标接口名称，例如：HelloService
          */
         private String targetServiceName;
 
@@ -26,7 +26,8 @@ public class RpcInvocation {
         private Object[] args;
 
         /**
-         * 请求的唯一标识
+         * 请求的唯一标识，用于异步调用时，标识请求和响应的对应关系
+         * 当请求从客户端发出的时候，会有一个uuid用于记录发出的请求，待数据返回的时候通过uuid来匹配对应的请求线程，并且返回给调用线程
          */
         private String uuid;
 
