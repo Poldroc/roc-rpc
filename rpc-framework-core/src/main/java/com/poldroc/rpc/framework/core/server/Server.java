@@ -2,7 +2,7 @@ package com.poldroc.rpc.framework.core.server;
 
 import com.poldroc.rpc.framework.core.common.RpcDecoder;
 import com.poldroc.rpc.framework.core.common.RpcEncoder;
-import com.poldroc.rpc.framework.core.common.ServerConfig;
+import com.poldroc.rpc.framework.core.common.config.ServerConfig;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;

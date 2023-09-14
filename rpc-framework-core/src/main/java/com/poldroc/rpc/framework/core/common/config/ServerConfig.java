@@ -1,4 +1,4 @@
-package com.poldroc.rpc.framework.core.common;
+package com.poldroc.rpc.framework.core.common.config;
 
 import lombok.Data;
 /**
