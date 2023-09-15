@@ -20,12 +20,10 @@ import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.RESP
 @Slf4j
 public class ClientHandler extends ChannelInboundHandlerAdapter {
 
-
     /**
      * 处理客户端发送的数据
-     * @param ctx
-     * @param msg
-     * @throws Exception
+     * @param ctx 上下文对象
+     * @param msg 传输的数据
      */
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
