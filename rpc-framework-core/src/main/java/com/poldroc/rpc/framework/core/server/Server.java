@@ -2,7 +2,11 @@ package com.poldroc.rpc.framework.core.server;
 
 import com.poldroc.rpc.framework.core.common.RpcDecoder;
 import com.poldroc.rpc.framework.core.common.RpcEncoder;
+import com.poldroc.rpc.framework.core.common.config.PropertiesBootstrap;
 import com.poldroc.rpc.framework.core.common.config.ServerConfig;
+import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
+import com.poldroc.rpc.framework.core.registry.RegistryService;
+import com.poldroc.rpc.framework.core.registry.ServiceUrl;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -13,6 +17,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import lombok.extern.slf4j.Slf4j;
 
 import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.PROVIDER_CLASS_MAP;
+import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.PROVIDER_URL_SET;
 
 
 /**
@@ -35,6 +40,8 @@ public class Server {
     private static EventLoopGroup workerGroup = null;
 
     private ServerConfig serverConfig;
+
+    private RegistryService registryService;
 
     public ServerConfig getServerConfig() {
         return serverConfig;
@@ -78,22 +85,28 @@ public class Server {
         bootstrap.childHandler(new ChannelInitializer<SocketChannel>() {
             @Override
             protected void initChannel(SocketChannel ch) throws Exception {
-                log.info("初始化provider过程");
+                log.info("============ 初始化provider过程 ============");
                 // 添加编码器、解码器和自定义的服务器处理器
                 ch.pipeline().addLast(new RpcEncoder());
                 ch.pipeline().addLast(new RpcDecoder());
                 ch.pipeline().addLast(new ServerHandler());
             }
         });
+        this.batchExportUrl();
         // 绑定端口，同步等待成功
-        bootstrap.bind(serverConfig.getPort()).sync();
+        bootstrap.bind(serverConfig.getServerPort()).sync();
+    }
+
+    public void initServerConfig() {
+        ServerConfig serverConfig = PropertiesBootstrap.loadServerConfigFromLocal();
+        this.setServerConfig(serverConfig);
     }
 
     /**
-     * 注册服务 服务名和服务实现类的映射关系
+     * 暴露服务信息
      * @param serviceBean 服务实现类
      */
-    public void registyService(Object serviceBean) {
+    public void exportService(Object serviceBean) {
         // 判断服务是否实现了接口
         if (serviceBean.getClass().getInterfaces().length == 0) {
             throw new RuntimeException("service must had interfaces!");
@@ -107,6 +120,34 @@ public class Server {
         Class interfaceClass = classes[0];
         // 将服务实现的接口名和服务实现类的映射关系存入缓存
         PROVIDER_CLASS_MAP.put(interfaceClass.getName(), serviceBean);
+        ServiceUrl serviceUrl = new ServiceUrl();
+        serviceUrl.setServiceName(interfaceClass.getName());
+        serviceUrl.setApplicationName(serverConfig.getApplicationName());
+        // 设置服务提供者的IP地址和端口号
+        serviceUrl.addParameter("host", CommonUtils.getIpAddress());
+        serviceUrl.addParameter("port", String.valueOf(serverConfig.getServerPort()));
+        PROVIDER_URL_SET.add(serviceUrl);
+    }
+
+    /**
+     * 批量暴露服务信息
+     * 将服务器上的服务注册到远程服务发现机制中，以供客户端发现和调用
+     */
+    public void batchExportUrl(){
+        Thread task = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Thread.sleep(2500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                for (ServiceUrl serviceUrl : PROVIDER_URL_SET) {
+                    registryService.register(serviceUrl);
+                }
+            }
+        });
+        task.start();
     }
 
     /**
@@ -119,5 +160,10 @@ public class Server {
         workerGroup.shutdownGracefully();
     }
 
-
+/*    public static void main(String[] args) throws InterruptedException {
+        Server server = new Server();
+        server.initServerConfig();
+        server.exportService(new DataServiceImpl());
+        server.startApplication();
+    }*/
 }

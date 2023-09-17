@@ -1,33 +1,19 @@
 package com.poldroc.rpc.framework.core.common.config;
 
+import lombok.Data;
+
 /**
  *
  * @author Poldroc
  * @date 2023/9/14
  */
-
+@Data
 public class ClientConfig {
 
-    private Integer port;
+    private String applicationName;
 
-    /**
-     *
-     */
-    private String serverAddr;
+    private String registerAddr;
 
-    public String getServerAddr() {
-        return serverAddr;
-    }
+    private String proxyType;
 
-    public void setServerAddr(String serverAddr) {
-        this.serverAddr = serverAddr;
-    }
-
-    public Integer getPort() {
-        return port;
-    }
-
-    public void setPort(Integer port) {
-        this.port = port;
-    }
 }

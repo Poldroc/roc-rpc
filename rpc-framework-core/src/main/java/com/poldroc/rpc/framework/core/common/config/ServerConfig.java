@@ -13,6 +13,10 @@ public class ServerConfig {
     /**
      * 服务端口
      */
-    private Integer port;
+    private Integer serverPort;
+
+    private String registerAddr;
+
+    private String applicationName;
 
 }

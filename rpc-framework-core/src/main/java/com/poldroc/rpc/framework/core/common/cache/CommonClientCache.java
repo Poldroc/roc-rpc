@@ -2,6 +2,7 @@ package com.poldroc.rpc.framework.core.common.cache;
 
 import com.poldroc.rpc.framework.core.common.RpcInvocation;
 import com.poldroc.rpc.framework.core.common.config.ClientConfig;
+import com.poldroc.rpc.framework.core.common.event.ChannelFutureWrapper;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
 
 import java.util.*;
@@ -44,6 +45,6 @@ public class CommonClientCache {
     /**
      * 每次进行远程调用的时候都是从这里面去选择服务提供者
      */
-    //public static Map<String, List<ChannelFutureWrapper>> CONNECT_MAP = new ConcurrentHashMap<>();
+    public static Map<String, List<ChannelFutureWrapper>> CONNECT_MAP = new ConcurrentHashMap<>();
 
 }
