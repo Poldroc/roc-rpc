@@ -2,6 +2,7 @@ package com.poldroc.rpc.framework.core.registry;
 
 
 /**
+ * 注册中心服务接口
  * @author Poldroc
  * @date 2023/9/15
  */
@@ -19,7 +20,6 @@ public interface RegistryService {
      * @param sUrl 服务url
      */
     void register(ServiceUrl sUrl);
-
 
     /**
      * 服务下线
@@ -40,7 +40,6 @@ public interface RegistryService {
      * @param sUrl 服务url
      */
     void subscribe(ServiceUrl sUrl);
-
 
     /**
      * 消费方取消订阅服务

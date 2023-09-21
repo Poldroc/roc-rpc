@@ -1,10 +1,9 @@
-package com.poldroc.rpc.framework.core.common.event;
+package com.poldroc.rpc.framework.core.common.event.listener;
 /**
  * 监听器接口
  * @author Poldroc
  * @date 2023/9/16
  */
-
 public interface RpcListener<T> {
 
     /**

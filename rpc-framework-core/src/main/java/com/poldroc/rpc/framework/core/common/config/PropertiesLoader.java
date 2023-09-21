@@ -21,7 +21,6 @@ public class PropertiesLoader {
 
     private static String DEFAULT_PROPERTIES_FILE = "F:/JavaTotal/rpc-framework/rpc-framework-core/src/main/resources/rpc.properties";
 
-    //todo 如果这里直接使用static修饰是否可以？
     public static void loadConfiguration() throws IOException {
         if(properties!=null){
             return;

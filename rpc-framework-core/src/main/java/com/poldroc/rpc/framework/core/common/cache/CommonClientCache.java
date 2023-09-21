@@ -1,9 +1,11 @@
 package com.poldroc.rpc.framework.core.common.cache;
 
+import com.poldroc.rpc.framework.core.common.ChannelFuturePollingRef;
 import com.poldroc.rpc.framework.core.common.RpcInvocation;
 import com.poldroc.rpc.framework.core.common.config.ClientConfig;
-import com.poldroc.rpc.framework.core.common.event.ChannelFutureWrapper;
+import com.poldroc.rpc.framework.core.common.ChannelFutureWrapper;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
+import com.poldroc.rpc.framework.core.router.Router;
 
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -27,16 +29,15 @@ public class CommonClientCache {
      */
     public static Map<String,Object> RESP_MAP = new ConcurrentHashMap<>();
 
-    public static ClientConfig CLIENT_CONFIG;
     /**
      * provider名称 --> 该服务有哪些集群URL
      */
-    public static List<String> SUBSCRIBE_SERVICE_LIST = new ArrayList<>();
+    public static List<ServiceUrl> SUBSCRIBE_SERVICE_LIST = new ArrayList<>();
 
     /**
      * 服务提供者的地址
      */
-    public static Map<String, List<ServiceUrl>> URL_MAP = new ConcurrentHashMap<>();
+    public static Map<String, Map<String,String>> URL_MAP = new ConcurrentHashMap<>();
 
     /**
      * 服务提供者的地址
@@ -46,5 +47,20 @@ public class CommonClientCache {
      * 每次进行远程调用的时候都是从这里面去选择服务提供者
      */
     public static Map<String, List<ChannelFutureWrapper>> CONNECT_MAP = new ConcurrentHashMap<>();
+
+    /**
+     * 随机请求的map
+     */
+    public static Map<String, ChannelFutureWrapper[]> SERVICE_ROUTER_MAP = new ConcurrentHashMap<>();
+
+    /**
+     * 轮询请求的map
+     */
+    public static ChannelFuturePollingRef CHANNEL_FUTURE_POLLING_REF = new ChannelFuturePollingRef();
+
+    /**
+     * 路由器
+     */
+    public static Router ROUTER;
 
 }

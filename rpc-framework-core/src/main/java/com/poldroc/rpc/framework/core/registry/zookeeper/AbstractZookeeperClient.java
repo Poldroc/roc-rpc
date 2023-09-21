@@ -76,6 +76,8 @@ public abstract class AbstractZookeeperClient {
     public abstract void createPersistentData(String address, String data);
 
     /**
+     * 创建有序且持久化类型节点数据信息
+     *
      * @param address
      * @param data
      */
@@ -153,7 +155,5 @@ public abstract class AbstractZookeeperClient {
      * @param watcher
      */
     public abstract void watchChildNodeData(String address, Watcher watcher);
-
-
 
 }

@@ -10,4 +10,6 @@ public interface RpcEvent {
     Object getData();
 
     RpcEvent setData(Object data);
+
+
 }

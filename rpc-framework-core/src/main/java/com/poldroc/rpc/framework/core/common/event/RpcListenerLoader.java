@@ -1,6 +1,11 @@
 package com.poldroc.rpc.framework.core.common.event;
 
+import com.poldroc.rpc.framework.core.common.event.listener.ProviderNodeDataChangeListener;
+import com.poldroc.rpc.framework.core.common.event.listener.RpcListener;
+import com.poldroc.rpc.framework.core.common.event.listener.ServiceDestroyListener;
+import com.poldroc.rpc.framework.core.common.event.listener.ServiceUpdateListener;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
+import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -15,7 +20,7 @@ import java.util.concurrent.Executors;
  * @author Poldroc
  * @date 2023/9/16
  */
-
+@Slf4j
 public class RpcListenerLoader {
     private static List<RpcListener> rpcListenerList = new ArrayList<>();
 
@@ -27,15 +32,17 @@ public class RpcListenerLoader {
     /**
      * 监听器注册
      *
-     * @param iRpcListener
+     * @param rpcListener
      */
-    public static void registerListener(RpcListener iRpcListener) {
-        rpcListenerList.add(iRpcListener);
+    public static void registerListener(RpcListener rpcListener) {
+        rpcListenerList.add(rpcListener);
     }
 
 
     public void init() {
-        // registerListener(new ServiceUpdateListener());
+        registerListener(new ServiceUpdateListener());
+        registerListener(new ServiceDestroyListener());
+        registerListener(new ProviderNodeDataChangeListener());
     }
 
 
@@ -59,6 +66,30 @@ public class RpcListenerLoader {
         return null;
     }
 
+    /**
+     * 同步事件处理，可能会堵塞
+     * 查找匹配事件类型的监听器，并调用它们的回调方法处理事件数据
+     *
+     * @param rpcEvent
+     */
+    public static void sendSyncEvent(RpcEvent rpcEvent) {
+        log.info("======== sendSyncEvent ========");
+        if (CommonUtils.isEmptyList(rpcListenerList)) {
+            return;
+        }
+        for (RpcListener<?> rpcListener : rpcListenerList) {
+            Class<?> type = getInterfaceT(rpcListener);
+            if (type.equals(rpcEvent.getClass())) {
+                try {
+                    log.info("sendSyncEvent callBack: {} ", rpcEvent.getData());
+                    rpcListener.callBack(rpcEvent.getData());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
 
     /**
      * 将RPC事件发送给注册的RPC监听器
@@ -66,6 +97,7 @@ public class RpcListenerLoader {
      * @param rpcEvent RPC事件
      */
     public static void sendEvent(RpcEvent rpcEvent) {
+        log.info("======== sendEvent ========");
         // 检查rpcListenerList是否为空或为空列表
         if (CommonUtils.isEmptyList(rpcListenerList)) {
             return;
@@ -81,6 +113,7 @@ public class RpcListenerLoader {
                     @Override
                     public void run() {
                         try {
+                            log.info("sendEvent callBack: {} ", rpcEvent.getData());
                             // 调用监听器的回调方法处理事件数据
                             rpcListener.callBack(rpcEvent.getData());
                         } catch (Exception e) {

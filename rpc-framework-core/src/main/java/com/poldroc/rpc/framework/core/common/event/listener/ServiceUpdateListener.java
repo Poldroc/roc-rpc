@@ -1,11 +1,11 @@
 package com.poldroc.rpc.framework.core.common.event.listener;
 
 import com.poldroc.rpc.framework.core.client.ConnectionHandler;
-import com.poldroc.rpc.framework.core.common.event.ChannelFutureWrapper;
-import com.poldroc.rpc.framework.core.common.event.RpcListener;
+import com.poldroc.rpc.framework.core.common.ChannelFutureWrapper;
 import com.poldroc.rpc.framework.core.common.event.RpcUpdateEvent;
 import com.poldroc.rpc.framework.core.common.event.data.SUrlChangeWrapper;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
+import com.poldroc.rpc.framework.core.router.Selector;
 import io.netty.channel.ChannelFuture;
 import lombok.extern.slf4j.Slf4j;
 
@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.CONNECT_MAP;
+import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.ROUTER;
 
 /**
  * 服务更新监听器
@@ -73,7 +74,13 @@ public class ServiceUpdateListener implements RpcListener<RpcUpdateEvent> {
                     }
                 }
             }
+            // 将新的连接信息添加到 finalChannelFutureWrappers 列表中
+            finalChannelFutureWrappers.addAll(newChannelFutureWrapper);
+            // 最终更新服务在这里
+            CONNECT_MAP.put(sUrlChangeWrapper.getServiceName(),finalChannelFutureWrappers);
+            Selector selector = new Selector();
+            selector.setProviderServiceName(sUrlChangeWrapper.getServiceName());
+            ROUTER.refreshRouterArr(selector);
         }
-
     }
 }

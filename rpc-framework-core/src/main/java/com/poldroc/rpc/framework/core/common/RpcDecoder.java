@@ -32,11 +32,11 @@ public class RpcDecoder extends ByteToMessageDecoder {
      * 解码器,考虑是否会有粘包拆包
      * @param ctx 上下文
      * @param byteBuf 用于读取数据
-     * @param list 用于添加解码后的对象，传递给下一个handler处理
+     * @param out 用于添加解码后的对象，传递给下一个handler处理
      * @throws Exception
      */
     @Override
-    protected void decode(ChannelHandlerContext ctx, ByteBuf byteBuf, List<Object> list) throws Exception {
+    protected void decode(ChannelHandlerContext ctx, ByteBuf byteBuf, List<Object> out) throws Exception {
         // 可读字节数小于基本长度，直接返回
         if (byteBuf.readableBytes() < BASE_LENGTH) {
             return;
@@ -74,10 +74,8 @@ public class RpcDecoder extends ByteToMessageDecoder {
             byteBuf.readBytes(content);
             // 封装成RpcProtocol对象，添加到list中，传递给下一个handler处理
             RpcProtocol rpcProtocol = new RpcProtocol(content);
-            list.add(rpcProtocol);
+
+            out.add(rpcProtocol);
         }
-
-
-
     }
 }

@@ -15,8 +15,12 @@ public class ServerConfig {
      */
     private Integer serverPort;
 
+
     private String registerAddr;
 
+    /**
+     * 服务名称
+     */
     private String applicationName;
 
 }

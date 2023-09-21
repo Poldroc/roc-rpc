@@ -1,5 +1,7 @@
 package com.poldroc.rpc.framework.core.registry.zookeeper;
 
+import com.poldroc.rpc.framework.core.registry.ServiceUrl;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
@@ -7,20 +9,22 @@ import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import com.poldroc.rpc.framework.core.registry.zookeeper.AbstractZookeeperClient;
+import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.data.Stat;
 
 import java.util.Collections;
 import java.util.List;
 
+import static org.apache.zookeeper.Watcher.Event.EventType.NodeDeleted;
+
 /**
  * zookeeper客户端实现类
  * @author Poldroc
  * @date 2023/9/15
  */
-
+@Slf4j
 public class CuratorZookeeperClient extends AbstractZookeeperClient {
-
 
     /**
      *  用于与 ZooKeeper 进行交互
@@ -30,7 +34,6 @@ public class CuratorZookeeperClient extends AbstractZookeeperClient {
     public CuratorZookeeperClient(String zkAddress) {
         this(zkAddress, null, null);
     }
-
 
     public CuratorZookeeperClient(String zkAddress, Integer baseSleepTimes, Integer maxRetryTimes) {
         super(zkAddress, baseSleepTimes, maxRetryTimes);
@@ -184,6 +187,7 @@ public class CuratorZookeeperClient extends AbstractZookeeperClient {
     @Override
     public void setTemporaryData(String address, String data) {
         try {
+            log.info("设置节点数据，节点地址为：{}，节点数据为：{}", address, data);
             client.setData().forPath(address, data.getBytes());
         } catch (Exception ex) {
             throw new IllegalStateException(ex.getMessage(), ex);
@@ -222,6 +226,7 @@ public class CuratorZookeeperClient extends AbstractZookeeperClient {
     public boolean deleteNode(String address) {
         try {
             client.delete().forPath(address);
+            log.info("删除节点成功，节点地址为：{}", address);
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -255,6 +260,7 @@ public class CuratorZookeeperClient extends AbstractZookeeperClient {
         try {
             // 当节点的数据发生更改时，监视器将触发。
             client.getData().usingWatcher(watcher).forPath(address);
+            log.info("监听节点数据变化成功，节点地址为：{}", address);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -270,9 +276,26 @@ public class CuratorZookeeperClient extends AbstractZookeeperClient {
         try {
             // 当子节点发生变化时，监视器将触发
             client.getChildren().usingWatcher(watcher).forPath(address);
+            log.info("监听子节点数据变化成功，节点地址为：{}", address);
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
 
+    public static void main(String[] args) {
+        AbstractZookeeperClient abstractZookeeperClient = new CuratorZookeeperClient("localhost:2181");
+        abstractZookeeperClient.watchNodeData("/rpc/com.poldroc.rpc.framework.interfaces.DataService/provider/10.1.21.11:9092",
+                new Watcher() {
+                    @Override
+                    public void process(WatchedEvent watchedEvent) {
+                        System.out.println(watchedEvent.getType());
+                        if(NodeDeleted.equals(watchedEvent.getType())){
+                            ProviderNodeInfo providerNodeInfo = ServiceUrl.buildURLFromUrlStr(watchedEvent.getPath());
+                            System.out.println(providerNodeInfo);
+                        }
+                    }
+                });
+        while (true){
+        }
     }
 }

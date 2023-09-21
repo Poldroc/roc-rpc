@@ -40,6 +40,7 @@ public class JDKClientInvocationHandler implements InvocationHandler {
         rpcInvocation.setTargetMethod(method.getName());
         // 注入uuid，用于标识请求
         rpcInvocation.setUuid(UUID.randomUUID().toString());
+        RESP_MAP.put(rpcInvocation.getUuid(), OBJECT);
         // 将请求信息放入发送队列
         SEND_QUEUE.add(rpcInvocation);
         // 客户端请求超时判断

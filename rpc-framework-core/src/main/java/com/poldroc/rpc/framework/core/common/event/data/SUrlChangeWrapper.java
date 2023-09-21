@@ -16,6 +16,10 @@ public class SUrlChangeWrapper {
 
     private List<String> providerUrl;
 
-
-
+    public String toString() {
+        return "URLChangeWrapper{" +
+                "serviceName='" + serviceName + '\'' +
+                ", providerUrl=" + providerUrl +
+                '}';
+    }
 }

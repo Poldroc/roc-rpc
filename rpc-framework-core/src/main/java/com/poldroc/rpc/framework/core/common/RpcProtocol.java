@@ -2,6 +2,8 @@ package com.poldroc.rpc.framework.core.common;
 
 import lombok.Data;
 
+import java.util.Arrays;
+
 import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.MAGIC_NUMBER;
 
 /**
@@ -15,7 +17,7 @@ public class RpcProtocol {
     private static final long serialVersionUID = 4359452337712339597L;
 
     /**
-     * 魔数，用于标识协议，在做服务通讯的时候定义的一个安全检测，确认当前请求的协议是否合法。
+     * 用于标识协议，在做服务通讯的时候定义的一个安全检测，确认当前请求的协议是否合法。
      */
     private short magicNumber = MAGIC_NUMBER;
 
@@ -34,6 +36,14 @@ public class RpcProtocol {
     public RpcProtocol(byte[] content) {
         this.contentLength = content.length;
         this.content = content;
+    }
+
+    @Override
+    public String toString() {
+        return "RpcProtocol{" +
+                "contentLength=" + contentLength +
+                ", content=" + Arrays.toString(content) +
+                '}';
     }
 
 }

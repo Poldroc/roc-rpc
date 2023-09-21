@@ -1,9 +1,13 @@
 package com.poldroc.rpc.framework.core.registry;
 
+import com.poldroc.rpc.framework.core.registry.zookeeper.ProviderNodeInfo;
 import lombok.Data;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.HOST;
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.PORT;
 
 /**
  * 服务url
@@ -44,8 +48,8 @@ public class ServiceUrl {
      * @return
      */
     public static String buildProviderUrlStr(ServiceUrl url) {
-        String host = url.getParameters().get("host");
-        String port = url.getParameters().get("port");
+        String host = url.getParameters().get(HOST);
+        String port = url.getParameters().get(PORT);
         return new String((url.getApplicationName() + ";" + url.getServiceName() + ";" + host + ":" + port + ";" + System.currentTimeMillis()).getBytes(), StandardCharsets.UTF_8);
     }
 
@@ -55,7 +59,7 @@ public class ServiceUrl {
      * @return
      */
     public static String buildConsumerUrlStr(ServiceUrl url) {
-        String host = url.getParameters().get("host");
+        String host = url.getParameters().get(HOST);
         return new String((url.getApplicationName() + ";" + url.getServiceName() + ";" + host + ";" + System.currentTimeMillis()).getBytes(), StandardCharsets.UTF_8);
     }
 
@@ -65,17 +69,13 @@ public class ServiceUrl {
      * @param providerNodeStr
      * @return
      */
-//    public static ProviderNodeInfo buildURLFromUrlStr(String providerNodeStr) {
-//        String[] items = providerNodeStr.split("/");
-//        ProviderNodeInfo providerNodeInfo = new ProviderNodeInfo();
-//        providerNodeInfo.setServiceName(items[2]);
-//        providerNodeInfo.setAddress(items[4]);
-//        return providerNodeInfo;
-//    }
-//
-
-
-
-
-
+    public static ProviderNodeInfo buildURLFromUrlStr(String providerNodeStr) {
+        String[] items = providerNodeStr.split("/");
+        ProviderNodeInfo providerNodeInfo = new ProviderNodeInfo();
+        providerNodeInfo.setServiceName(items[1]);
+        providerNodeInfo.setAddress(items[2]);
+        providerNodeInfo.setRegistryTime(items[3]);
+        providerNodeInfo.setWeight(Integer.valueOf(items[4]));
+        return providerNodeInfo;
+    }
 }

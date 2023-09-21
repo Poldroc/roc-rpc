@@ -1,5 +1,7 @@
 package com.poldroc.rpc.framework.core.common.config;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.io.IOException;
 
 /**
@@ -7,7 +9,7 @@ import java.io.IOException;
  * @author Poldroc
  * @date 2023/9/18
  */
-
+@Slf4j
 public class PropertiesBootstrap {
     private volatile boolean configIsReady;
 
@@ -15,9 +17,11 @@ public class PropertiesBootstrap {
     public static final String REGISTER_ADDRESS = "rpc.registerAddr";
     public static final String APPLICATION_NAME = "rpc.applicationName";
     public static final String PROXY_TYPE = "rpc.proxyType";
+    public static final String ROUTER_TYPE = "rpc.router";
 
 
     public static ServerConfig loadServerConfigFromLocal() {
+        log.info("======== loadServerConfigFromLocal ========");
         try {
             PropertiesLoader.loadConfiguration();
         } catch (IOException e) {
@@ -32,6 +36,7 @@ public class PropertiesBootstrap {
 
 
     public static ClientConfig loadClientConfigFromLocal(){
+        log.info("======== loadClientConfigFromLocal ========");
         try {
             PropertiesLoader.loadConfiguration();
         } catch (IOException e) {
@@ -41,6 +46,7 @@ public class PropertiesBootstrap {
         clientConfig.setApplicationName(PropertiesLoader.getPropertiesStr(APPLICATION_NAME));
         clientConfig.setRegisterAddr(PropertiesLoader.getPropertiesStr(REGISTER_ADDRESS));
         clientConfig.setProxyType(PropertiesLoader.getPropertiesStr(PROXY_TYPE));
+        clientConfig.setRouterStrategy(PropertiesLoader.getPropertiesStr(ROUTER_TYPE));
         return clientConfig;
     }
 }
