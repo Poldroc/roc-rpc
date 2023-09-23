@@ -2,6 +2,7 @@ package com.poldroc.rpc.framework.core.common.cache;
 
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
+import com.poldroc.rpc.framework.core.serialize.SerializeFactory;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,4 +32,9 @@ public class CommonServerCache {
      * 注册中心服务
      */
     public static RegistryService REGISTRY_SERVICE;
+
+    /**
+     * 服务端序列化工厂
+     */
+    public static SerializeFactory SERVER_SERIALIZE_FACTORY;
 }

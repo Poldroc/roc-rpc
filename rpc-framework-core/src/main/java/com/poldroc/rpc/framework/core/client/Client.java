@@ -15,6 +15,10 @@ import com.poldroc.rpc.framework.core.registry.zookeeper.AbstractRegister;
 import com.poldroc.rpc.framework.core.registry.zookeeper.ZookeeperRegister;
 import com.poldroc.rpc.framework.core.router.RandomRouterImpl;
 import com.poldroc.rpc.framework.core.router.RotateRouterImpl;
+import com.poldroc.rpc.framework.core.serialize.fastjson.FastJsonSerializeFactory;
+import com.poldroc.rpc.framework.core.serialize.hessian.HessianSerializeFactory;
+import com.poldroc.rpc.framework.core.serialize.jdk.JdkSerializeFactory;
+import com.poldroc.rpc.framework.core.serialize.kryo.KryoSerializeFactory;
 import com.poldroc.rpc.framework.interfaces.DataService;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelFuture;
@@ -29,8 +33,7 @@ import java.util.List;
 import java.util.Map;
 
 import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.*;
-import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.RANDOM_ROUTER_TYPE;
-import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.ROTATE_ROUTER_TYPE;
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.*;
 
 /**
  * RPC客户端类
@@ -227,10 +230,32 @@ public class Client {
         log.info("======== init client config ========");
         //初始化路由策略
         String routerStrategy = clientConfig.getRouterStrategy();
-        if (RANDOM_ROUTER_TYPE.equals(routerStrategy)) {
-            ROUTER = new RandomRouterImpl();
-        } else if (ROTATE_ROUTER_TYPE.equals(routerStrategy)) {
-            ROUTER = new RotateRouterImpl();
+        switch (routerStrategy) {
+            case RANDOM_ROUTER_TYPE:
+                ROUTER = new RandomRouterImpl();
+                break;
+            case ROTATE_ROUTER_TYPE:
+                ROUTER = new RotateRouterImpl();
+                break;
+            default:
+                throw new RuntimeException("no match routerStrategy for" + routerStrategy);
+        }
+        String clientSerialize = clientConfig.getClientSerialize();
+        switch (clientSerialize) {
+            case JDK_SERIALIZE_TYPE:
+                CLIENT_SERIALIZE_FACTORY = new JdkSerializeFactory();
+                break;
+            case FAST_JSON_SERIALIZE_TYPE:
+                CLIENT_SERIALIZE_FACTORY = new FastJsonSerializeFactory();
+                break;
+            case HESSIAN2_SERIALIZE_TYPE:
+                CLIENT_SERIALIZE_FACTORY = new HessianSerializeFactory();
+                break;
+            case KRYO_SERIALIZE_TYPE:
+                CLIENT_SERIALIZE_FACTORY = new KryoSerializeFactory();
+                break;
+            default:
+                throw new RuntimeException("no match serialize type for " + clientSerialize);
         }
     }
 

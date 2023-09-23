@@ -6,6 +6,7 @@ import com.poldroc.rpc.framework.core.common.config.ClientConfig;
 import com.poldroc.rpc.framework.core.common.ChannelFutureWrapper;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
 import com.poldroc.rpc.framework.core.router.Router;
+import com.poldroc.rpc.framework.core.serialize.SerializeFactory;
 
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -62,5 +63,10 @@ public class CommonClientCache {
      * 路由器
      */
     public static Router ROUTER;
+
+    /**
+     * 客户端序列化工厂
+     */
+    public static SerializeFactory CLIENT_SERIALIZE_FACTORY;
 
 }

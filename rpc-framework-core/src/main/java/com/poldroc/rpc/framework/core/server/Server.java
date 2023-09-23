@@ -7,6 +7,10 @@ import com.poldroc.rpc.framework.core.common.config.ServerConfig;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
+import com.poldroc.rpc.framework.core.serialize.fastjson.FastJsonSerializeFactory;
+import com.poldroc.rpc.framework.core.serialize.hessian.HessianSerializeFactory;
+import com.poldroc.rpc.framework.core.serialize.jdk.JdkSerializeFactory;
+import com.poldroc.rpc.framework.core.serialize.kryo.KryoSerializeFactory;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -16,8 +20,8 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import lombok.extern.slf4j.Slf4j;
 
-import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.PROVIDER_CLASS_MAP;
-import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.PROVIDER_URL_SET;
+import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.*;
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.*;
 
 
 /**
@@ -100,6 +104,25 @@ public class Server {
     public void initServerConfig() {
         ServerConfig serverConfig = PropertiesBootstrap.loadServerConfigFromLocal();
         this.setServerConfig(serverConfig);
+
+        String serverSerialize = serverConfig.getServerSerialize();
+        switch (serverSerialize) {
+            case JDK_SERIALIZE_TYPE:
+                SERVER_SERIALIZE_FACTORY = new JdkSerializeFactory();
+                break;
+            case FAST_JSON_SERIALIZE_TYPE:
+                SERVER_SERIALIZE_FACTORY = new FastJsonSerializeFactory();
+                break;
+            case HESSIAN2_SERIALIZE_TYPE:
+                SERVER_SERIALIZE_FACTORY = new HessianSerializeFactory();
+                break;
+            case KRYO_SERIALIZE_TYPE:
+                SERVER_SERIALIZE_FACTORY = new KryoSerializeFactory();
+                break;
+            default:
+                throw new RuntimeException("no match serialize type for" + serverSerialize);
+        }
+        System.out.println("serverSerialize is "+serverSerialize);
     }
 
     /**
