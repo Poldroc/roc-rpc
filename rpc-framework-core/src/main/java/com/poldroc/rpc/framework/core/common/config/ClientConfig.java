@@ -21,4 +21,9 @@ public class ClientConfig {
      */
     private String routerStrategy;
 
+    /**
+     * 客户端序列化方式 hession2,kryo,jdk,fastjson
+     */
+    private String clientSerialize;
+
 }

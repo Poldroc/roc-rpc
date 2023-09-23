@@ -23,4 +23,9 @@ public class ServerConfig {
      */
     private String applicationName;
 
+    /**
+     * 服务端序列化方式 hession2,kryo,jdk,fastjson
+     */
+    private String serverSerialize;
+
 }

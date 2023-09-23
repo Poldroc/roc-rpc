@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.JDK_SERIALIZE_TYPE;
+
 /**
  * 将properties的配置转换成本地的一个Map结构
  * @author Poldroc
@@ -18,6 +20,8 @@ public class PropertiesBootstrap {
     public static final String APPLICATION_NAME = "rpc.applicationName";
     public static final String PROXY_TYPE = "rpc.proxyType";
     public static final String ROUTER_TYPE = "rpc.router";
+    public static final String SERVER_SERIALIZE_TYPE = "rpc.serverSerialize";
+    public static final String CLIENT_SERIALIZE_TYPE = "rpc.clientSerialize";
 
 
     public static ServerConfig loadServerConfigFromLocal() {
@@ -31,6 +35,7 @@ public class PropertiesBootstrap {
         serverConfig.setServerPort(PropertiesLoader.getPropertiesInteger(SERVER_PORT));
         serverConfig.setApplicationName(PropertiesLoader.getPropertiesStr(APPLICATION_NAME));
         serverConfig.setRegisterAddr(PropertiesLoader.getPropertiesStr(REGISTER_ADDRESS));
+        serverConfig.setServerSerialize(PropertiesLoader.getPropertiesStrDefault(SERVER_SERIALIZE_TYPE,JDK_SERIALIZE_TYPE));
         return serverConfig;
     }
 
@@ -47,6 +52,7 @@ public class PropertiesBootstrap {
         clientConfig.setRegisterAddr(PropertiesLoader.getPropertiesStr(REGISTER_ADDRESS));
         clientConfig.setProxyType(PropertiesLoader.getPropertiesStr(PROXY_TYPE));
         clientConfig.setRouterStrategy(PropertiesLoader.getPropertiesStr(ROUTER_TYPE));
+        clientConfig.setClientSerialize(PropertiesLoader.getPropertiesStrDefault(CLIENT_SERIALIZE_TYPE,JDK_SERIALIZE_TYPE));
         return clientConfig;
     }
 }

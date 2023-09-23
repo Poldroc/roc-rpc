@@ -57,6 +57,11 @@ public class PropertiesLoader {
         return Integer.valueOf(propertiesMap.get(key));
     }
 
+    public static String getPropertiesStrDefault(String key, String defaultVal) {
+        String val = getPropertiesStr(key);
+        return val == null || val.equals("") ? defaultVal : val;
+    }
+
     private static boolean putKeyToMap(String key) {
         if (properties == null) {
             return true;
