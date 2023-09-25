@@ -10,6 +10,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.ReferenceCountUtil;
 import lombok.extern.slf4j.Slf4j;
 
+import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.CLIENT_SERIALIZE_FACTORY;
 import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.RESP_MAP;
 
 /**
@@ -21,7 +22,7 @@ import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.RESP
 public class ClientHandler extends ChannelInboundHandlerAdapter {
 
     /**
-     * 处理客户端发送的数据
+     * 处理服务端发送的数据
      * @param ctx 上下文对象
      * @param msg 传输的数据
      */
@@ -31,11 +32,9 @@ public class ClientHandler extends ChannelInboundHandlerAdapter {
         RpcProtocol rpcProtocol = (RpcProtocol) msg;
         // 得到传输参数的字节数组
         byte[] content = rpcProtocol.getContent();
-        // 将字节数组转化为字符串
-        String result = new String(content, 0, content.length);
-        log.info("客户端接收到的数据为：{}", result);
+        // 通过
+        RpcInvocation rpcInvocation = CLIENT_SERIALIZE_FACTORY.deserialize(content,RpcInvocation.class);
         // RpcInvocation 通常包含了远程调用的参数和方法等信息
-        RpcInvocation rpcInvocation = JSON.parseObject(result, RpcInvocation.class);
         // 通过之前发送的uuid，来注入对应的响应数据
         if(!RESP_MAP.containsKey(rpcInvocation.getUuid())){
             // 如果没有对应的响应数据

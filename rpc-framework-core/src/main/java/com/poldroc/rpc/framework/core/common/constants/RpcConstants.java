@@ -26,4 +26,8 @@ public class RpcConstants {
 
     public static final String PORT = "port";
 
+    public static final String GROUP = "group";
+
+    public static final String SERVICE_URL = "serviceUrl";
+
 }

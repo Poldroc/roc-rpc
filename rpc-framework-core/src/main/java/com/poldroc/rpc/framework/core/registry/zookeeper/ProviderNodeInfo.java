@@ -14,6 +14,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class ProviderNodeInfo {
 
+    private String applicationName;
+
     private String serviceName;
 
     private String address;
@@ -22,13 +24,17 @@ public class ProviderNodeInfo {
 
     private String registryTime;
 
+    private String group;
+
     @Override
     public String toString() {
         return "ProviderNodeInfo{" +
-                "serviceName='" + serviceName + '\'' +
+                "applicationName='" + applicationName + '\'' +
+                ", serviceName='" + serviceName + '\'' +
                 ", address='" + address + '\'' +
                 ", weight=" + weight +
                 ", registryTime='" + registryTime + '\'' +
+                ", group='" + group + '\'' +
                 '}';
     }
 }

@@ -15,11 +15,9 @@ public class ChannelFuturePollingRef {
     private AtomicLong referenceTimes = new AtomicLong(0);
 
 
-    public ChannelFutureWrapper getChannelFutureWrapper(String serviceName){
-        ChannelFutureWrapper[] arr = SERVICE_ROUTER_MAP.get(serviceName);
+    public ChannelFutureWrapper getChannelFutureWrapper(ChannelFutureWrapper[] arr){
         long i = referenceTimes.getAndIncrement();
         int index = (int) (i % arr.length);
         return arr[index];
     }
-
 }

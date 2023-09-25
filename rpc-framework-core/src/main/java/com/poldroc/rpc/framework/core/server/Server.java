@@ -4,9 +4,11 @@ import com.poldroc.rpc.framework.core.common.RpcDecoder;
 import com.poldroc.rpc.framework.core.common.RpcEncoder;
 import com.poldroc.rpc.framework.core.common.config.PropertiesBootstrap;
 import com.poldroc.rpc.framework.core.common.config.ServerConfig;
+import com.poldroc.rpc.framework.core.common.event.RpcListenerLoader;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
+import com.poldroc.rpc.framework.core.registry.zookeeper.ZookeeperRegister;
 import com.poldroc.rpc.framework.core.serialize.fastjson.FastJsonSerializeFactory;
 import com.poldroc.rpc.framework.core.serialize.hessian.HessianSerializeFactory;
 import com.poldroc.rpc.framework.core.serialize.jdk.JdkSerializeFactory;
@@ -44,6 +46,8 @@ public class Server {
     private static EventLoopGroup workerGroup = null;
 
     private ServerConfig serverConfig;
+
+    private static RpcListenerLoader rpcListenerLoader;
 
     private RegistryService registryService;
 
@@ -122,14 +126,15 @@ public class Server {
             default:
                 throw new RuntimeException("no match serialize type for" + serverSerialize);
         }
-        System.out.println("serverSerialize is "+serverSerialize);
+        log.info("serverSerialize is "+serverSerialize);
     }
 
     /**
      * 暴露服务信息
-     * @param serviceBean 服务实现类
+     * @param serviceWrapper 服务包装类
      */
-    public void exportService(Object serviceBean) {
+    public void exportService(ServiceWrapper serviceWrapper) {
+        Object serviceBean = serviceWrapper.getServiceObj();
         // 判断服务是否实现了接口
         if (serviceBean.getClass().getInterfaces().length == 0) {
             throw new RuntimeException("service must had interfaces!");
@@ -139,6 +144,9 @@ public class Server {
         if (classes.length > 1) {
             throw new RuntimeException("service must only had one interfaces!");
         }
+        if (REGISTRY_SERVICE == null) {
+            REGISTRY_SERVICE = new ZookeeperRegister(serverConfig.getRegisterAddr());
+        }
         // 获取服务实现的接口
         Class interfaceClass = classes[0];
         // 将服务实现的接口名和服务实现类的映射关系存入缓存
@@ -147,8 +155,9 @@ public class Server {
         serviceUrl.setServiceName(interfaceClass.getName());
         serviceUrl.setApplicationName(serverConfig.getApplicationName());
         // 设置服务提供者的IP地址和端口号
-        serviceUrl.addParameter("host", CommonUtils.getIpAddress());
-        serviceUrl.addParameter("port", String.valueOf(serverConfig.getServerPort()));
+        serviceUrl.addParameter(HOST, CommonUtils.getIpAddress());
+        serviceUrl.addParameter(PORT, String.valueOf(serverConfig.getServerPort()));
+        serviceUrl.addParameter(GROUP, String.valueOf(serviceWrapper.getGroup()));
         PROVIDER_URL_SET.add(serviceUrl);
     }
 
@@ -166,7 +175,7 @@ public class Server {
                     e.printStackTrace();
                 }
                 for (ServiceUrl serviceUrl : PROVIDER_URL_SET) {
-                    registryService.register(serviceUrl);
+                    REGISTRY_SERVICE.register(serviceUrl);
                 }
             }
         });

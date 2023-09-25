@@ -4,6 +4,7 @@ import com.poldroc.rpc.framework.core.common.ChannelFuturePollingRef;
 import com.poldroc.rpc.framework.core.common.RpcInvocation;
 import com.poldroc.rpc.framework.core.common.config.ClientConfig;
 import com.poldroc.rpc.framework.core.common.ChannelFutureWrapper;
+import com.poldroc.rpc.framework.core.filter.client.ClientFilterChain;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
 import com.poldroc.rpc.framework.core.router.Router;
 import com.poldroc.rpc.framework.core.serialize.SerializeFactory;
@@ -68,5 +69,15 @@ public class CommonClientCache {
      * 客户端序列化工厂
      */
     public static SerializeFactory CLIENT_SERIALIZE_FACTORY;
+
+    /**
+     * 客户端配置
+     */
+    public static ClientConfig CLIENT_CONFIG;
+
+    /**
+     * 客户端过滤器链
+     */
+    public static ClientFilterChain CLIENT_FILTER_CHAIN ;
 
 }

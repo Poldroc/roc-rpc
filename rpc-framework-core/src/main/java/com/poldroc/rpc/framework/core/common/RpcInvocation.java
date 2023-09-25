@@ -2,6 +2,9 @@ package com.poldroc.rpc.framework.core.common;
 
 import lombok.Data;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * RPC自定义协议请求的封装类
  * @author Poldroc
@@ -35,6 +38,24 @@ public class RpcInvocation {
          * 接口响应的数据塞入这个字段中（如果是异步调用或者void类型，这里就为空）
          */
         private Object response;
+
+        /**
+         * 附加属性
+         */
+        private Map<String,Object> attachments = new HashMap<>();
+
+        @Override
+        public String toString() {
+            return "RpcInvocation{" +
+                    "targetMethod='" + targetMethod + '\'' +
+                    ", targetServiceName='" + targetServiceName + '\'' +
+                    ", args=" + args +
+                    ", uuid='" + uuid + '\'' +
+                    ", response=" + response +
+                    ", attachments=" + attachments +
+                    '}';
+        }
+
 
 
 }

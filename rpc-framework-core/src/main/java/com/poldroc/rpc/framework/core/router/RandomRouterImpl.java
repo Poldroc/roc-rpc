@@ -34,6 +34,10 @@ public class RandomRouterImpl implements Router {
             arr[i] = channelFutureWrappers.get(result[i]);
         }
         SERVICE_ROUTER_MAP.put(selector.getProviderServiceName(), arr);
+        ServiceUrl sUrl = new ServiceUrl();
+        sUrl.setServiceName(selector.getProviderServiceName());
+        // 更新权重
+        ROUTER.updateWeight(sUrl);
     }
 
     /**

@@ -26,6 +26,9 @@ public class ChannelFutureWrapper {
 
     private Integer weight;
 
+    private String group;
+
+
     public ChannelFutureWrapper(String host, Integer port,Integer weight) {
         this.host = host;
         this.port = port;

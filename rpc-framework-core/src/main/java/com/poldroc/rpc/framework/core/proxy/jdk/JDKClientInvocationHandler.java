@@ -1,5 +1,6 @@
 package com.poldroc.rpc.framework.core.proxy.jdk;
 
+import com.poldroc.rpc.framework.core.client.RpcReferenceWrapper;
 import com.poldroc.rpc.framework.core.common.RpcInvocation;
 
 import java.lang.reflect.InvocationHandler;
@@ -23,6 +24,12 @@ public class JDKClientInvocationHandler implements InvocationHandler {
      * 用于锁定当前对象
      */
     private final static Object OBJECT = new Object();
+
+    private RpcReferenceWrapper rpcReferenceWrapper;
+
+    public JDKClientInvocationHandler(RpcReferenceWrapper rpcReferenceWrapper) {
+        this.rpcReferenceWrapper = rpcReferenceWrapper;
+    }
 
     /**
      * 接口类型

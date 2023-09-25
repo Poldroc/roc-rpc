@@ -2,6 +2,8 @@ package com.poldroc.rpc.framework.core.client;
 
 import com.poldroc.rpc.framework.core.common.ChannelFutureWrapper;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
+import com.poldroc.rpc.framework.core.registry.ServiceUrl;
+import com.poldroc.rpc.framework.core.registry.zookeeper.ProviderNodeInfo;
 import com.poldroc.rpc.framework.core.router.Selector;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelFuture;
@@ -56,12 +58,14 @@ public class ConnectionHandler {
         // 使用 bootstrap 对象建立与服务提供者的连接，这是一个同步操作，会等待连接建立完成
         ChannelFuture channelFuture = bootstrap.connect(ip, port).sync();
         String providerURLInfo = URL_MAP.get(providerServiceName).get(providerIp);
+        ProviderNodeInfo providerNodeInfo = ServiceUrl.buildURLFromUrlStr(providerURLInfo);
         // 创建 ChannelFutureWrapper 对象，将来可以从这个对象中获取与服务端的连接
         ChannelFutureWrapper channelFutureWrapper = new ChannelFutureWrapper();
         channelFutureWrapper.setChannelFuture(channelFuture);
         channelFutureWrapper.setHost(ip);
         channelFutureWrapper.setPort(port);
-        channelFutureWrapper.setWeight(Integer.valueOf(providerURLInfo.substring(providerURLInfo.lastIndexOf(";")+1)));
+        channelFutureWrapper.setWeight(providerNodeInfo.getWeight()));
+        channelFutureWrapper.setGroup(providerNodeInfo.getGroup());
         // 将服务提供者的 IP 地址添加到 SERVER_ADDRESS 集合中，用于跟踪已连接的服务提供者
         SERVER_ADDRESS.add(providerIp);
         // 获取与特定服务名称关联的连接信息列表
@@ -123,14 +127,15 @@ public class ConnectionHandler {
      */
     public static ChannelFuture getChannelFuture(String providerServiceName) {
         // 获取与指定服务名称关联的连接信息列表
-        List<ChannelFutureWrapper> channelFutureWrappers = CONNECT_MAP.get(providerServiceName);
-        if (CommonUtils.isEmptyList(channelFutureWrappers)) {
+        ChannelFutureWrapper[] channelFutureWrappers = SERVICE_ROUTER_MAP.get(providerServiceName);
+        if (channelFutureWrappers == null || channelFutureWrappers.length == 0) {
             throw new RuntimeException("no provider exist for " + providerServiceName);
         }
-        // 随机获取一个与服务提供者的连接，并返回
-        // ChannelFuture channelFuture = channelFutureWrappers.get(new Random().nextInt(channelFutureWrappers.size())).getChannelFuture();
+
+        // 从连接信息列表中选择一个 ChannelFuture 对象，这里使用了随机选择的策略
         Selector selector = new Selector();
         selector.setProviderServiceName(providerServiceName);
+        selector.setChannelFutureWrappers(channelFutureWrappers);
         return ROUTER.select(selector).getChannelFuture();
     }
 }

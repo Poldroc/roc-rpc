@@ -4,7 +4,7 @@ import com.poldroc.rpc.framework.core.common.event.RpcDestroyEvent;
 import com.poldroc.rpc.framework.core.common.event.RpcListenerLoader;
 import lombok.extern.slf4j.Slf4j;
 /**
- *
+ * 应用关闭钩子，用于在jvm进程关闭的时候触发一些事件，比如注销服务等等
  * @author Poldroc
  * @date 2023/9/22
  */

@@ -1,6 +1,8 @@
 package com.poldroc.rpc.framework.core.proxy;
 
 
+import com.poldroc.rpc.framework.core.client.RpcReferenceWrapper;
+
 /**
  * 代理工厂
  * @author Poldroc
@@ -9,5 +11,5 @@ package com.poldroc.rpc.framework.core.proxy;
 
 public interface ProxyFactory {
 
-    <T> T getProxy(final Class clazz) throws Throwable;
+    <T> T getProxy(RpcReferenceWrapper rpcReferenceWrapper) throws Throwable;
 }
