@@ -8,6 +8,7 @@ import java.util.List;
 
 /**
  * 服务端过滤器链
+ * 插入位置 com.poldroc.rpc.framework.core.server.ServerHandler#channelRead
  * @author Poldroc
  * @date 2023/9/25
  */

@@ -259,6 +259,7 @@ public class Client {
         }
     }
 
+/*
     public static void main(String[] args) throws Throwable {
         Client client = new Client();
         RpcReference rpcReference = client.initClientApplication();
@@ -278,5 +279,6 @@ public class Client {
             }
         }
     }
+*/
 
 }

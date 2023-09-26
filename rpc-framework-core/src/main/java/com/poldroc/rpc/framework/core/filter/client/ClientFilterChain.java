@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 /**
  * 客户端过滤器链
+ * 插入位置 com.poldroc.rpc.framework.core.client.ConnectionHandler#getChannelFuture
  * @author Poldroc
  * @date 2023/9/26
  */

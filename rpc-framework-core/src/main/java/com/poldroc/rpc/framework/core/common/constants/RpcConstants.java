@@ -30,4 +30,10 @@ public class RpcConstants {
 
     public static final String SERVICE_URL = "serviceUrl";
 
+    public static final String SERVICE_TOKEN  ="serviceToken";
+
+    public static final String LIMIT = "limit";
+
+    public static final String ASYNC =  "async";
+
 }

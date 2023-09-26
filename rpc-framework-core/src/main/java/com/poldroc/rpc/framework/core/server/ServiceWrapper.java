@@ -1,10 +1,13 @@
 package com.poldroc.rpc.framework.core.server;
+
+import lombok.Data;
+
 /**
  * RPC服务包装类，用于存储服务对象和服务分组信息
  * @author Poldroc
  * @date 2023/9/23
  */
-
+@Data
 public class ServiceWrapper {
 
     /**
@@ -17,6 +20,16 @@ public class ServiceWrapper {
      */
     private String group = "default";
 
+    /**
+     * 整个应用的token校验
+     */
+    private String serviceToken = "";
+
+    /**
+     * 限流策略
+     */
+    private Integer limit = -1;
+
 
     public ServiceWrapper(Object serviceObj) {
         this.serviceObj = serviceObj;
@@ -27,19 +40,4 @@ public class ServiceWrapper {
         this.group = group;
     }
 
-    public Object getServiceObj() {
-        return serviceObj;
-    }
-
-    public void setServiceObj(Object serviceObj) {
-        this.serviceObj = serviceObj;
-    }
-
-    public String getGroup() {
-        return group;
-    }
-
-    public void setGroup(String group) {
-        this.group = group;
-    }
 }

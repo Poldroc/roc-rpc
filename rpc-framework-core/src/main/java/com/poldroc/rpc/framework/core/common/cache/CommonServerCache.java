@@ -52,5 +52,8 @@ public class CommonServerCache {
      */
     public static ServerFilterChain SERVER_FILTER_CHAIN;
 
+    /**
+     * 服务端缓存，保存服务实现类的包装类
+     */
     public static final Map<String, ServiceWrapper> PROVIDER_SERVICE_WRAPPER_MAP = new ConcurrentHashMap<>();
 }
