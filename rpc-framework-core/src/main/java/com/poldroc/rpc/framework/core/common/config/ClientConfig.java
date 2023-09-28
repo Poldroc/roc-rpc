@@ -14,6 +14,8 @@ public class ClientConfig {
 
     private String registerAddr;
 
+    private String registerType;
+
     private String proxyType;
 
     /**

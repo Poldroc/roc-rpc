@@ -1,0 +1,2 @@
+serverLogFilterImpl=com.poldroc.rpc.framework.core.filter.server.ServerLogFilterImpl
+serverTokenFilterImpl=com.poldroc.rpc.framework.core.filter.server.ServerTokenFilterImpl

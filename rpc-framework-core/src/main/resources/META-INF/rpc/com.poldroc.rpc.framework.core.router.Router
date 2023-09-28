@@ -1,0 +1,2 @@
+rotate=com.poldroc.rpc.framework.core.router.RotateRouterImpl
+random=com.poldroc.rpc.framework.core.router.RandomRouterImpl

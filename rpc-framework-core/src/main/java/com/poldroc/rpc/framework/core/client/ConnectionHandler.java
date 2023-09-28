@@ -64,7 +64,7 @@ public class ConnectionHandler {
         channelFutureWrapper.setChannelFuture(channelFuture);
         channelFutureWrapper.setHost(ip);
         channelFutureWrapper.setPort(port);
-        channelFutureWrapper.setWeight(providerNodeInfo.getWeight()));
+        channelFutureWrapper.setWeight(providerNodeInfo.getWeight());
         channelFutureWrapper.setGroup(providerNodeInfo.getGroup());
         // 将服务提供者的 IP 地址添加到 SERVER_ADDRESS 集合中，用于跟踪已连接的服务提供者
         SERVER_ADDRESS.add(providerIp);

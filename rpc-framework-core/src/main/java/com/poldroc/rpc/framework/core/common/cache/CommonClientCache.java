@@ -6,8 +6,10 @@ import com.poldroc.rpc.framework.core.common.config.ClientConfig;
 import com.poldroc.rpc.framework.core.common.ChannelFutureWrapper;
 import com.poldroc.rpc.framework.core.filter.client.ClientFilterChain;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
+import com.poldroc.rpc.framework.core.registry.zookeeper.AbstractRegister;
 import com.poldroc.rpc.framework.core.router.Router;
 import com.poldroc.rpc.framework.core.serialize.SerializeFactory;
+import com.poldroc.rpc.framework.core.spi.ExtensionLoader;
 
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -79,5 +81,11 @@ public class CommonClientCache {
      * 客户端过滤器链
      */
     public static ClientFilterChain CLIENT_FILTER_CHAIN ;
+
+    /**
+     * 注册中心
+     */
+    public static AbstractRegister ABSTRACT_REGISTER;
+    public static ExtensionLoader EXTENSION_LOADER = new ExtensionLoader();
 
 }
