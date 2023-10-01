@@ -1,0 +1,1 @@
+zookeeper=com.poldroc.rpc.framework.core.registry.zookeeper.ZookeeperRegister

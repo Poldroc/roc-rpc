@@ -16,6 +16,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.CLIENT_CONFIG;
+import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.SERVER_CONFIG;
+
 /**
  * @author Poldroc
  * @date 2023/9/16
@@ -25,15 +28,28 @@ public class ZookeeperRegister extends AbstractRegister implements RegistryServi
 
     private AbstractZookeeperClient zkClient;
 
+
     /**
      * 表示zooKeeper中服务注册和发现的根路径的常量字符串
      */
     private String ROOT = "/rpc";
 
+    public AbstractZookeeperClient getZkClient() {
+        return zkClient;
+    }
+
+    public void setZkClient(AbstractZookeeperClient zkClient) {
+        this.zkClient = zkClient;
+    }
+
     public ZookeeperRegister(String address) {
         this.zkClient = new CuratorZookeeperClient(address);
     }
 
+    public ZookeeperRegister() {
+        String registryAddr = CLIENT_CONFIG!= null ? CLIENT_CONFIG.getRegisterAddr() : SERVER_CONFIG.getRegisterAddr();
+        this.zkClient = new CuratorZookeeperClient(registryAddr);
+    }
 
     private String getProviderPath(ServiceUrl sUrl) {
         return ROOT + "/" + sUrl.getServiceName() + "/provider/" + sUrl.getParameters().get("host") + ":" + sUrl.getParameters().get("port");

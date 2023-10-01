@@ -1,5 +1,6 @@
 package com.poldroc.rpc.framework.core.common.utils;
 
+import com.poldroc.rpc.framework.core.common.ChannelFutureWrapper;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.Inet4Address;
@@ -76,6 +77,10 @@ public class CommonUtils {
 
     public static boolean isEmpty(String str) {
         return str == null || str.length() == 0;
+    }
+
+    public static boolean isNotEmpty(String str){
+        return !isEmpty(str);
     }
 
     public static boolean isEmptyList(List list) {

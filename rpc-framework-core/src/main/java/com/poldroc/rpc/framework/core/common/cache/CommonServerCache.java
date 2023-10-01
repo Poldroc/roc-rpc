@@ -56,4 +56,10 @@ public class CommonServerCache {
      * 服务端缓存，保存服务实现类的包装类
      */
     public static final Map<String, ServiceWrapper> PROVIDER_SERVICE_WRAPPER_MAP = new ConcurrentHashMap<>();
+
+    /**
+     * 服务端是否已经启动
+     */
+    public static Boolean IS_STARTED = false;
+
 }

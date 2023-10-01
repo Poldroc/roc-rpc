@@ -18,6 +18,7 @@ public class ServerConfig {
 
     private String registerAddr;
 
+    private String registerType;
     /**
      * 服务名称
      */

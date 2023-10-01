@@ -17,7 +17,7 @@ public class ServerFilterChain {
 
     private static List<ServerFilter> serverFilters = new ArrayList<>();
 
-    public void addFilter(ServerFilter serverFilter) {
+    public void addServerFilter(ServerFilter serverFilter) {
         serverFilters.add(serverFilter);
     }
 
