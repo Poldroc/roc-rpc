@@ -1,6 +1,7 @@
 package com.poldroc.rpc.framework.core.common.cache;
 
 import com.poldroc.rpc.framework.core.common.config.ServerConfig;
+import com.poldroc.rpc.framework.core.dispatcher.ServerChannelDispatcher;
 import com.poldroc.rpc.framework.core.filter.server.ServerFilterChain;
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
@@ -61,5 +62,10 @@ public class CommonServerCache {
      * 服务端是否已经启动
      */
     public static Boolean IS_STARTED = false;
+
+    /**
+     * 服务端通道分发器
+     */
+    public static ServerChannelDispatcher SERVER_CHANNEL_DISPATCHER = new ServerChannelDispatcher();
 
 }

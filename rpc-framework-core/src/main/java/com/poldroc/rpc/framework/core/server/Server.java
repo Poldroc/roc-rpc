@@ -122,6 +122,8 @@ public class Server {
         ServerConfig serverConfig = PropertiesBootstrap.loadServerConfigFromLocal();
         this.setServerConfig(serverConfig);
         SERVER_CONFIG = serverConfig;
+        // 初始化线程池和队列的配置
+        SERVER_CHANNEL_DISPATCHER.init(SERVER_CONFIG.getServerQueueSize(), SERVER_CONFIG.getServerBizThreadNums());
         // 序列化技术初始化
         String serverSerialize = serverConfig.getServerSerialize();
         EXTENSION_LOADER.loadExtension(SerializeFactory.class);
