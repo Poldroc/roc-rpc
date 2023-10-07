@@ -230,3 +230,523 @@ public class ExtensionLoader {
 
 
 ## 高并发
+
+- 如何使用阻塞队列对高并发请求的一个削弱
+- 业务线程池的引入保证请求的处理吞吐能力
+- 异步调用的简单实现
+
+### 服务端优化
+
+#### 使用堵塞队列提升吞吐性能
+
+* **单独设计一条独立的队列用于接收请求**
+
+单独使用一条堵塞队列用于接收请求，然后在队尾由业务线程池来负责消费请求数据。这样即使请求出现了堆积，也是堆积在一条我们比较能轻易操作的队列当中。
+
+
+
+首先定义一个请求分发器ServerChannelDispatcher，这个分发器的内部存有一条阻塞队列 **RPC_DATA_QUEUE。** 另外分发器的内部还有一个线程对象ServerJobCoreHandle专门负责将队列的数据读出，然后提及到业务线程池去执行。
+
+> 核心代码
+
+```java
+package com.poldroc.rpc.framework.core.dispatcher;
+
+import com.poldroc.rpc.framework.core.common.RpcInvocation;
+import com.poldroc.rpc.framework.core.common.RpcProtocol;
+import com.poldroc.rpc.framework.core.server.ServerChannelReadData;
+
+import java.lang.reflect.Method;
+import java.util.concurrent.*;
+
+import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.*;
+/**
+ * 服务器通道分发器
+ * @author Poldroc
+ * @date 2023/10/4
+ */
+
+public class ServerChannelDispatcher {
+
+    /**
+     * 阻塞队列
+     */
+    private BlockingQueue<ServerChannelReadData> RPC_DATA_QUEUE;
+
+    /**
+     * 业务线程池
+     */
+    private ExecutorService executorService;
+
+    public ServerChannelDispatcher() {
+
+    }
+
+    /**
+     * 初始化 阻塞队列和业务线程池
+     * @param queueSize
+     * @param bizThreadNums
+     */
+    public void init(int queueSize, int bizThreadNums) {
+        RPC_DATA_QUEUE = new ArrayBlockingQueue<>(queueSize);
+        // 初始化业务线程池
+        // 线程池的核心线程数，最大线程数目，空闲线程存活时间，时间单位，阻塞队列
+        executorService = new ThreadPoolExecutor(bizThreadNums, bizThreadNums,
+                // 非核心线程在执行完任务后立即被销毁，不会保持空闲
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(512));
+    }
+
+    /**
+     * 将数据放入阻塞队列
+     * @param serverChannelReadData
+     */
+    public void add(ServerChannelReadData serverChannelReadData) {
+        RPC_DATA_QUEUE.add(serverChannelReadData);
+    }
+
+    /**
+     * 专门负责将队列的数据读出，然后提及到业务线程池去执行
+     */
+    class ServerJobCoreHandle implements Runnable {
+
+        /**
+         * 可以实现并发处理多个请求，每个请求都在独立的线程中执行，以提高服务器的处理能力
+         */
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    // 阻塞式获取数据 如果队列为空，线程将阻塞等待，直到有数据可用
+                    ServerChannelReadData serverChannelReadData = RPC_DATA_QUEUE.take();
+                    // 取出一个 ServerChannelReadData 后，将其交给 executorService 线程池中的一个线程去执行，以实现并发处理
+                    executorService.submit(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                RpcProtocol rpcProtocol = serverChannelReadData.getRpcProtocol();
+                                // 反序列化
+                                RpcInvocation rpcInvocation = SERVER_SERIALIZE_FACTORY.deserialize(rpcProtocol.getContent(), RpcInvocation.class);
+                                // 执行过滤链路
+                                SERVER_FILTER_CHAIN.doFilter(rpcInvocation);
+                                // 执行目标方法
+                                Object aimObject = PROVIDER_CLASS_MAP.get(rpcInvocation.getTargetServiceName());
+                                Method[] methods = aimObject.getClass().getDeclaredMethods();
+                                Object result = null;
+                                // 遍历所有方法，找到目标方法，找到与客户端请求的目标方法名匹配的方法
+                                for (Method method : methods) {
+                                    if (method.getName().equals(rpcInvocation.getTargetMethod())) {
+                                        // 如果目标方法的返回值为void，则直接调用目标方法
+                                        if (method.getReturnType().equals(Void.TYPE)) {
+                                            // 动态调用方法
+                                            method.invoke(aimObject, rpcInvocation.getArgs());
+                                        } else {
+                                            // 如果目标方法的返回值不为void，则调用目标方法，并将返回值赋值给result
+                                            result = method.invoke(aimObject, rpcInvocation.getArgs());
+                                        }
+                                        break;
+                                    }
+                                }
+                                rpcInvocation.setResponse(result);
+                                // 将结果序列化
+                                RpcProtocol respRpcProtocol = new RpcProtocol(SERVER_SERIALIZE_FACTORY.serialize(rpcInvocation));
+                                // 将结果返回给客户端
+                                serverChannelReadData.getChannelHandlerContext().writeAndFlush(respRpcProtocol);
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    });
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    /**
+     * 启动数据消费
+     */
+    public void startDataConsume() {
+        Thread thread = new Thread(new ServerJobCoreHandle());
+        thread.start();
+    }
+}
+```
+
+
+
+### 客户端优化
+
+例如当我们遇到一些只需要触发接口调用，但是对于接口返回内容并不关心的这类函数，就没有必要再在代码中监听对方的消息返回行为了，此时可以采用**异步发送的策略**进行实现。
+
+
+
+在底层的代理类com.poldroc.rpc.framework.core.proxy.jdk.JDKClientInvocationHandler内部实现部分加入了一个if判断，如果发送请求的部分存在async相关配置，则不会进入循环监听的逻辑代码部分，具体：
+
+```java
+package com.poldroc.rpc.framework.core.proxy.jdk;
+
+import com.poldroc.rpc.framework.core.client.RpcReferenceWrapper;
+import com.poldroc.rpc.framework.core.common.RpcInvocation;
+
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.util.UUID;
+import java.util.concurrent.TimeoutException;
+
+import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.RESP_MAP;
+import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.SEND_QUEUE;
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.DEFAULT_TIMEOUT;
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.TIME_OUT;
+
+/**
+ * 各代理工厂都统一使用
+ * 核心任务就是将需要调用的方法名称、服务名称，参数统统都封装好到RpcInvocation当中，然后塞入到一个队列里，并且等待服务端的数据返回
+ * @author Poldroc
+ * @date 2023/9/15
+ */
+
+public class JDKClientInvocationHandler implements InvocationHandler {
+
+    /**
+     * 用于锁定当前对象
+     */
+    private final static Object OBJECT = new Object();
+
+    private RpcReferenceWrapper rpcReferenceWrapper;
+
+    private int timeOut = DEFAULT_TIMEOUT;
+
+    public JDKClientInvocationHandler(RpcReferenceWrapper rpcReferenceWrapper) {
+        this.rpcReferenceWrapper = rpcReferenceWrapper;
+        timeOut = Integer.valueOf(String.valueOf(rpcReferenceWrapper.getAttatchments().get(TIME_OUT)));
+    }
+
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        RpcInvocation rpcInvocation = new RpcInvocation();
+        rpcInvocation.setArgs(args);
+        rpcInvocation.setTargetServiceName(rpcReferenceWrapper.getAimClass().getName());
+        rpcInvocation.setTargetMethod(method.getName());
+        // 注入uuid，用于标识请求
+        rpcInvocation.setUuid(UUID.randomUUID().toString());
+        rpcInvocation.setAttachments(rpcReferenceWrapper.getAttatchments());
+        // 将请求信息放入发送队列
+        SEND_QUEUE.add(rpcInvocation);
+        if (rpcReferenceWrapper.isAsync()) {
+            return null;
+        }
+        // 如果不是异步调用，客户端会等待服务端的响应，同时检查是否超时
+        long beginTime = System.currentTimeMillis();
+        RESP_MAP.put(rpcInvocation.getUuid(), OBJECT);
+        while (System.currentTimeMillis() - beginTime < timeOut ) {
+            // 从响应结果集中获取响应结果
+            Object object = RESP_MAP.get(rpcInvocation.getUuid());
+            if (object instanceof RpcInvocation) {
+                // 如果是RpcInvocation类型，说明是服务端返回的响应结果，直接返回
+                return ((RpcInvocation)object).getResponse();
+            }
+        }
+        // 如果超时，抛出异常
+        throw new TimeoutException("client wait server's response timeout!");
+    }
+}
+
+```
+
+
+
+## 容错层
+
+- **服务端异常返回给到调用方展示**
+- **客户端调用可以支持超时重试** 
+- **服务提供方进行接口限流** 
+
+
+
+#### 服务端异常正常返回
+
+设计思路是：**将服务端的异常信息统一采集起来，返回给到调用方并且将堆栈记录打印。**
+
+![image-20231005195135855](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202310051951055.png)
+
+
+
+
+
+
+
+在客户端调用服务端的时候，数据都会被封装在了一个叫做
+
+com.poldroc.rpc.framework.core.common.RpcInvocation的代码对象中，该对象包含了请求的目标方法，请求参数，正常响应内容等字段，现在我计划给它新增一个异常信息字段Throwable e：
+
+```java
+/**
+ * RPC自定义协议请求的封装类
+ * @author Poldroc
+ * @date 2023/9/12
+ */
+@Data
+@ToString
+public class RpcInvocation {
+
+        /**
+         * 请求的目标方法名称，例如：sayHello
+         */
+        private String targetMethod;
+
+        /**
+         * 请求的目标接口名称，例如：HelloService
+         */
+        private String targetServiceName;
+
+        /**
+         * 请求的参数
+         */
+        private Object[] args;
+
+        /**
+         * 请求的唯一标识，用于异步调用时，标识请求和响应的对应关系
+         * 当请求从客户端发出的时候，会有一个uuid用于记录发出的请求，待数据返回的时候通过uuid来匹配对应的请求线程，并且返回给调用线程
+         */
+        private String uuid;
+
+        /**
+         * 接口响应的数据塞入这个字段中（如果是异步调用或者void类型，这里就为空）
+         */
+        private Object response;
+
+        /**
+         * 附加属性
+         */
+        private Map<String,Object> attachments = new HashMap<>();
+
+        /**
+         * 主要用于记录服务端抛出的异常信息
+         */
+        private Throwable e;
+        
+}
+
+```
+
+
+
+e字段用于存储服务端抛出的异常信息，而相关的异常信息则是在服务端的com.poldroc.rpc.framework.core.dispatcher.ServerChannelDispatcher任务中进行捕获。
+
+捕获原理：在服务端获取到目标函数和传入参数之后，需要通过反射来执行相关调用，可以在外加一层try catch去捕获该部分的异常信息：
+
+
+
+#### 超时重试机制
+
+关于接口超时重试这类机制，其实建议在实际使用的时候再三斟酌下，**并不是所有的接口在超时的时候都需要进行重试，面对一些非幂等性的接口调用情况，重试机制就应该谨慎使用**。下边我们来深入分析下，什么样的场景适合使用重试机制。
+
+- 目标集群中有A，B服务器，A服务器性能不佳，处理请求比较缓慢，B服务器性能优于A，所以当接口调用A出现超时之后，可以尝试重新发起调用，将请求转到B上从而获取数据结果。
+- 网络因为某些特殊异常，导致突然间断，此时可以通过重试机制发起二次调用，这时候重试机制就对接口的整体可用性有了一定的保障。
+
+听了上边的这些场景介绍，我们似乎会发现重试机制的存在还是有一定好处的，那么接下来让我们来思考下重试机制使用不当可能会导致什么情况发生：
+
+- 对于一些对数据重复性较为敏感的接口，例如转账，下单，以及一些和金融相关的接口，当接口调用出现超时之后，并不好确认数据包是否已经抵达到目标服务，所以这类场景下对接口设置超时重试功能需要有所斟酌。
+
+综合上述的这些因素，我在设计思路为：**如果出现超时异常，默认可以发起1次重试机会，如果不想使用重试功能，可以在配置中将对应方法的重试次数设置为0。** 例如下边的案例代码：
+
+```java
+public static void main(String[] args) throws Throwable {
+    Client client = new Client();
+    RpcReference rpcReference = client.initClientApplication();
+    RpcReferenceWrapper<DataService> rpcReferenceWrapper = new RpcReferenceWrapper<>();
+    rpcReferenceWrapper.setAimClass(DataService.class);
+    rpcReferenceWrapper.setGroup("dev");
+    rpcReferenceWrapper.setServiceToken("token-a");
+    rpcReferenceWrapper.setTimeOut(3000);
+    //超时重试次数
+    rpcReferenceWrapper.setRetry(0);
+    rpcReferenceWrapper.setAsync(false);
+    DataService dataService = rpcReference.get(rpcReferenceWrapper);
+    //订阅服务
+    client.doSubscribeService(DataService.class);
+
+    ConnectionHandler.setBootstrap(client.getBootstrap());
+    client.doConnectServer();
+    client.startClient();
+    String result = dataService.testErrorV2();
+    System.out.println("结束调用");
+    System.out.println(result);
+}
+
+```
+
+大致的一个逻辑处理流程图如下图所示：
+
+![image-20231005231735391](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202310052317574.png)
+
+**重试策略**：立即重试
+
+调用失败后立即发送二次重试，并且会把超时的请求路由到其他机器上，而不是本机尝试。
+
+
+
+
+
+#### 服务端保护机制
+
+- 控制业务应用整体的连接上限；
+- 单个服务请求的限流。
+
+
+
+##### 对单个应用连接进行控制
+
+采用RPC服务的集群设计中，通常都是服务的消费方要比提供方更多，服务提供者有可能会同时和上百个服务调用方建立连接，所以当服务提供方的负载压力达到一定阈值的条件下就应该减少外界新访问的连接。
+
+所以我们现在需要在原有的代码基础上加上以下实现：**对服务端的要有一个统一的连接数控制，比如最大连接限制为512，当前连接数超过512则超出的部分直接拒绝。**
+
+首先需要定义一个限制最大连接数的Handler类：
+
+```java
+package com.poldroc.rpc.framework.core.server;
+
+import io.netty.channel.*;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Collections;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
+
+/**
+ * 服务端最大连接数限制处理器
+ * @author Poldroc
+ * @date 2023/10/6
+ */
+@ChannelHandler.Sharable
+@Slf4j
+public class MaxConnectionLimitHandler extends ChannelInboundHandlerAdapter {
+
+    /**
+     * 最大连接数
+     */
+    private final int maxConnectionNums;
+
+    /**
+     * 当前连接数 线程安全的方式
+     */
+    private final AtomicInteger numConnection = new AtomicInteger(0);
+
+    /**
+     * 子连接的Channel对象
+     */
+    private final Set<Channel> childChannel = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    /**
+     * 记录被丢弃的连接数量 这是在jdk1.8之后出现的对于AtomicLong的优化版本
+     */
+    private final LongAdder numDroppedConnections = new LongAdder();
+
+    /**
+     * 用于标记是否已经调度了日志打印任务
+     */
+    private final AtomicBoolean loggingScheduled = new AtomicBoolean(false);
+
+    public MaxConnectionLimitHandler(int maxConnectionNums) {
+        this.maxConnectionNums = maxConnectionNums;
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        Channel channel = (Channel) msg;
+        // 连接数加一
+        int conn = numConnection.incrementAndGet();
+        // 如果连接数小于最大连接数，将channel加入到childChannel中
+        if (conn > 0 && conn <= maxConnectionNums) {
+            this.childChannel.add(channel);
+            // 添加监听器，当channel关闭时，将channel从childChannel中移除，并将连接数减一
+            channel.closeFuture().addListener(future -> {
+                childChannel.remove(channel);
+                numConnection.decrementAndGet();
+            });
+            super.channelRead(ctx, msg);
+        } else {
+            // 递减连接计数器
+            numConnection.decrementAndGet();
+            // 避免产生大量的time_wait连接
+            // 设置SO_LINGER为0，表示立即关闭连接
+            channel.config().setOption(ChannelOption.SO_LINGER, 0);
+            // 强制关闭channel
+            channel.unsafe().closeForcibly();
+            // 递增丢弃连接计数器
+            numDroppedConnections.increment();
+            // 这里加入一道CAS（Compare-And-Swap）操作来确保只有一个线程安排了日志记录，并且在1秒后调度writeNumDroppedConnectionLog方法
+            if (loggingScheduled.compareAndSet(false, true)) {
+                ctx.executor().schedule(this::writeNumDroppedConnectionLog, 1, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    /**
+     * 记录连接失败的日志
+     */
+    private void writeNumDroppedConnectionLog() {
+        // 将标记设置为false
+        loggingScheduled.set(false);
+        // 获取丢弃的连接数并重置计数器
+        final long dropped = numDroppedConnections.sumThenReset();
+        // 记录日志
+        if (dropped > 0) {
+            log.error("Dropped {} connections because of connection limit", dropped);
+        }
+    }
+
+}
+
+```
+
+细节注意：
+
+* 防止高并发请求下，突然大量请求抵达服务端，但是却被告知断开链接，此时为了防止打印重复的日志，可以采用定时记录的设计思想去实现。
+
+
+
+##### 单个服务请求的限流
+
+首先来解释下这个概念，例如UserProvider这个服务提供者，内部有多个方法对外暴露给调用方远程执行，整体的服务调用规律如下表所示：
+
+| **服务名称** | **方法名称**        | **限制并发调用次数** | **日常并发请求量** | **备注** |
+| ------------ | ------------------- | -------------------- | ------------------ | -------- |
+| UserProvider | UserQueryService    | 100                  | 50                 | 写DB     |
+| UserProvider | UserUpdateService   | 40                   | 20                 | 写DB     |
+| UserProvider | UserRegistryService | 5                    | 2                  | 写DB     |
+
+由于业务场景中偶尔会有一些大流量的线上活动，这种规模会对现有的访问流量造成突发增加，如果不做相关的防御手段容易直接将流量压力打入到整个数据库层面，从而引发更加严重的系统危害问题。
+
+所以限流的策略更加细粒度化是我们实现保护效果的关键思路。
+
+
+
+**限流部分的主要核心思想是采用了Semaphore的组件进行实践。**
+
+`Semaphore` 是 Java JDK 中提供的一种同步工具，用于控制多线程并发访问共享资源。它是一种信号量机制，可以帮助防止竞态条件，并协调多线程之间对关键代码段的访问。`Semaphore` 是 Java.util.concurrent 包中的一部分，从 Java 5 开始引入。
+
+`Semaphore` 主要用于两种情况：
+
+1. **Binary Semaphore（二进制信号量）**：这种类型的信号量只能有两个状态，通常用 0 和 1 表示。它通常被称为互斥锁（Mutex），用于实现互斥访问，即同一时刻只允许一个线程访问共享资源。
+   - `acquire` 操作：如果信号量的值大于 0，将其减 1，否则阻塞当前线程，直到信号量变为非零。
+   - `release` 操作：增加信号量的值 by 1。
+2. **Counting Semaphore（计数信号量）**：这种类型的信号量可以有一个非负整数值，用于控制对有限数量资源的访问。它允许多个线程同时访问资源，但有一个上限值。
+   - `acquire` 操作：如果信号量的值大于 0，将其减 1，否则阻塞当前线程，直到信号量变为非零。
+   - `release` 操作：增加信号量的值 by 1。
+
+它提供了acquire和tryAcquire两种方法供开发者调用，在Sem aphore的内部其实是有一个计数器，每次向它申请许可的时候如果计数器不为0，则申请通过，如果计数器为0则会处于堵塞（acquire），或者立马断开（tryAcquire），又或者等待一定时间后才断开（tryAcquire可以指定等待时间）。当资源使用完毕之后需要执行release操作，将计数器归还。
+
+
+
+使用tryAcquire则是一种“快速响应”的解决思路，当获取申请失败后，不会堵塞当前线程，而是立马通知客户端调用异常，然后发起二次重试，路由到其他节点。**至少这种策略相比于acquire来说不存在请求堆积，导致服务崩溃的风险因素。**
+
+
+
+
+

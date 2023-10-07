@@ -1,2 +1,4 @@
 serverLogFilterImpl=com.poldroc.rpc.framework.core.filter.server.ServerLogFilterImpl
 serverTokenFilterImpl=com.poldroc.rpc.framework.core.filter.server.ServerTokenFilterImpl
+serverServiceBeforeLimitFilterImpl=com.poldroc.rpc.framework.core.filter.server.ServerServiceBeforeLimitFilterImpl
+serverServiceAfterLimitFilterImpl=com.poldroc.rpc.framework.core.filter.server.ServerServiceAfterLimitFilterImpl

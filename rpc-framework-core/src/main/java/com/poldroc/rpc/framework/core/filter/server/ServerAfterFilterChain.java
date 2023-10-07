@@ -13,7 +13,7 @@ import java.util.List;
  * @date 2023/9/25
  */
 
-public class ServerFilterChain {
+public class ServerAfterFilterChain {
 
     private static List<ServerFilter> serverFilters = new ArrayList<>();
 

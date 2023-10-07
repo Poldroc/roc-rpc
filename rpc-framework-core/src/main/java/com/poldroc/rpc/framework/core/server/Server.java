@@ -2,28 +2,29 @@ package com.poldroc.rpc.framework.core.server;
 
 import com.poldroc.rpc.framework.core.common.RpcDecoder;
 import com.poldroc.rpc.framework.core.common.RpcEncoder;
+import com.poldroc.rpc.framework.core.common.ServerServiceSemaphoreWrapper;
+import com.poldroc.rpc.framework.core.common.annotations.SPI;
 import com.poldroc.rpc.framework.core.common.config.PropertiesBootstrap;
 import com.poldroc.rpc.framework.core.common.config.ServerConfig;
 import com.poldroc.rpc.framework.core.common.event.RpcListenerLoader;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
 import com.poldroc.rpc.framework.core.filter.ServerFilter;
-import com.poldroc.rpc.framework.core.filter.server.ServerFilterChain;
+import com.poldroc.rpc.framework.core.filter.server.ServerAfterFilterChain;
+import com.poldroc.rpc.framework.core.filter.server.ServerBeforeFilterChain;
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
 import com.poldroc.rpc.framework.core.registry.zookeeper.AbstractRegister;
-import com.poldroc.rpc.framework.core.registry.zookeeper.ZookeeperRegister;
 import com.poldroc.rpc.framework.core.serialize.SerializeFactory;
-import com.poldroc.rpc.framework.core.serialize.fastjson.FastJsonSerializeFactory;
-import com.poldroc.rpc.framework.core.serialize.hessian.HessianSerializeFactory;
-import com.poldroc.rpc.framework.core.serialize.jdk.JdkSerializeFactory;
-import com.poldroc.rpc.framework.core.serialize.kryo.KryoSerializeFactory;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.DelimiterBasedFrameDecoder;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -101,11 +102,18 @@ public class Server {
                 // 是否开启TCP底层心跳机制，true为开启
                 .option(ChannelOption.SO_KEEPALIVE, true);
 
+        // 服务端采用单一长连接的模式，这里所支持的最大连接数应该和机器本身的性能有关
+        // 连接防护的handler应该绑定在Main-Reactor上
+        bootstrap.handler(new MaxConnectionLimitHandler(serverConfig.getMaxConnections()));
         // 设置通道初始化，用于设置每条连接的数据读写，业务处理逻辑
         bootstrap.childHandler(new ChannelInitializer<SocketChannel>() {
             @Override
             protected void initChannel(SocketChannel ch) throws Exception {
                 log.info("============ 初始化provider过程 ============");
+                // 设置分隔符
+                ByteBuf delimiter = Unpooled.copiedBuffer(DEFAULT_DECODE_CHAR.getBytes());
+                // 添加分隔符解码器，防止粘包现象
+                ch.pipeline().addLast(new DelimiterBasedFrameDecoder(serverConfig.getMaxServerRequestData(), delimiter));
                 // 添加编码器、解码器和自定义的服务器处理器
                 ch.pipeline().addLast(new RpcEncoder());
                 ch.pipeline().addLast(new RpcDecoder());
@@ -113,9 +121,12 @@ public class Server {
             }
         });
         this.batchExportUrl();
+        // 开始准备接收请求的任务
+        SERVER_CHANNEL_DISPATCHER.startDataConsume();
         // 绑定端口，同步等待成功
         bootstrap.bind(serverConfig.getServerPort()).sync();
         IS_STARTED = true;
+        log.info("============ 服务端启动成功 ============");
     }
 
     public void initServerConfig() throws IOException, ClassNotFoundException, InstantiationException, IllegalAccessException {
@@ -137,15 +148,22 @@ public class Server {
         // 过滤链初始化
         EXTENSION_LOADER.loadExtension(ServerFilter.class);
         LinkedHashMap<String, Class> serverFilterClassMap = EXTENSION_LOADER_CLASS_CACHE.get(ServerFilter.class.getName());
-        ServerFilterChain serverFilterChain = new ServerFilterChain();
+        ServerBeforeFilterChain serverBeforeFilterChain = new ServerBeforeFilterChain();
+        ServerAfterFilterChain serverAfterFilterChain = new ServerAfterFilterChain();
         for (String key : serverFilterClassMap.keySet()) {
             Class serverFilterClass = serverFilterClassMap.get(key);
             if (serverFilterClass == null) {
                 throw new RuntimeException("no match serverFilter type for " + key);
             }
-            serverFilterChain.addServerFilter((ServerFilter) serverFilterClass.newInstance());
+            SPI spi = (SPI) serverFilterClass.getDeclaredAnnotation(SPI.class);
+            if (spi != null && "before".equals(spi.value())) {
+                serverBeforeFilterChain.addServerFilter((ServerFilter) serverFilterClass.newInstance());
+            } else if(spi != null && "after".equals(spi.value())){
+                serverAfterFilterChain.addServerFilter((ServerFilter) serverFilterClass.newInstance());
+            }
         }
-        SERVER_FILTER_CHAIN = serverFilterChain;
+        SERVER_AFTER_FILTER_CHAIN = serverAfterFilterChain;
+        SERVER_BEFORE_FILTER_CHAIN = serverBeforeFilterChain;
     }
 
     /**
@@ -186,6 +204,8 @@ public class Server {
         serviceUrl.addParameter(PORT, String.valueOf(serverConfig.getServerPort()));
         serviceUrl.addParameter(GROUP, String.valueOf(serviceWrapper.getGroup()));
         serviceUrl.addParameter(LIMIT, String.valueOf(serviceWrapper.getLimit()));
+        // 设置服务端的限流器
+        SERVER_SERVICE_SEMAPHORE_MAP.put(interfaceClass.getName(),new ServerServiceSemaphoreWrapper(serviceWrapper.getLimit()));
         PROVIDER_URL_SET.add(serviceUrl);
         if (CommonUtils.isNotEmpty(serviceWrapper.getServiceToken())) {
             PROVIDER_SERVICE_WRAPPER_MAP.put(interfaceClass.getName(), serviceWrapper);

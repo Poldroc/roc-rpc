@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.CLIENT_SERIALIZE_FACTORY;
 import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.RESP_MAP;
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.ASYNC;
 
 /**
  * 客户端处理器，用于处理客户端的请求
@@ -34,6 +35,17 @@ public class ClientHandler extends ChannelInboundHandlerAdapter {
         byte[] content = rpcProtocol.getContent();
         // 通过
         RpcInvocation rpcInvocation = CLIENT_SERIALIZE_FACTORY.deserialize(content,RpcInvocation.class);
+        // 打印异常信息
+        if (rpcInvocation.getE() != null) {
+            rpcInvocation.getE().printStackTrace();
+        }
+        // 如果是单纯异步模式的话，响应Map集合中不会存在映射值
+        Object r = rpcInvocation.getAttachments().get(ASYNC);
+        if (r != null && Boolean.valueOf(String.valueOf(r))) {
+            // 释放资源
+            ReferenceCountUtil.release(msg);
+            return;
+        }
         // RpcInvocation 通常包含了远程调用的参数和方法等信息
         // 通过之前发送的uuid，来注入对应的响应数据
         if(!RESP_MAP.containsKey(rpcInvocation.getUuid())){

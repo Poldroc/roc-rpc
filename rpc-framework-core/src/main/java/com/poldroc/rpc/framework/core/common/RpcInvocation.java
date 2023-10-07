@@ -1,6 +1,7 @@
 package com.poldroc.rpc.framework.core.common;
 
 import lombok.Data;
+import lombok.ToString;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -11,6 +12,7 @@ import java.util.Map;
  * @date 2023/9/12
  */
 @Data
+@ToString
 public class RpcInvocation {
 
         /**
@@ -44,18 +46,14 @@ public class RpcInvocation {
          */
         private Map<String,Object> attachments = new HashMap<>();
 
-        @Override
-        public String toString() {
-            return "RpcInvocation{" +
-                    "targetMethod='" + targetMethod + '\'' +
-                    ", targetServiceName='" + targetServiceName + '\'' +
-                    ", args=" + args +
-                    ", uuid='" + uuid + '\'' +
-                    ", response=" + response +
-                    ", attachments=" + attachments +
-                    '}';
-        }
+        /**
+         * 主要用于记录服务端抛出的异常信息
+         */
+        private Throwable e;
 
-
+        /**
+         * 重试次数
+         */
+        private int retry;
 
 }

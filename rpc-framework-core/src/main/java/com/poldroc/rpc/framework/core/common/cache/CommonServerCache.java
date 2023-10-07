@@ -1,8 +1,10 @@
 package com.poldroc.rpc.framework.core.common.cache;
 
+import com.poldroc.rpc.framework.core.common.ServerServiceSemaphoreWrapper;
 import com.poldroc.rpc.framework.core.common.config.ServerConfig;
 import com.poldroc.rpc.framework.core.dispatcher.ServerChannelDispatcher;
-import com.poldroc.rpc.framework.core.filter.server.ServerFilterChain;
+import com.poldroc.rpc.framework.core.filter.server.ServerAfterFilterChain;
+import com.poldroc.rpc.framework.core.filter.server.ServerBeforeFilterChain;
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
 import com.poldroc.rpc.framework.core.serialize.SerializeFactory;
@@ -49,9 +51,14 @@ public class CommonServerCache {
     public static ServerConfig SERVER_CONFIG;
 
     /**
-     * 服务端过滤器链
+     * 服务端前置过滤器链
      */
-    public static ServerFilterChain SERVER_FILTER_CHAIN;
+    public static ServerBeforeFilterChain SERVER_BEFORE_FILTER_CHAIN;
+
+    /**
+     * 服务端后置过滤器链
+     */
+    public static ServerAfterFilterChain SERVER_AFTER_FILTER_CHAIN;
 
     /**
      * 服务端缓存，保存服务实现类的包装类
@@ -68,4 +75,8 @@ public class CommonServerCache {
      */
     public static ServerChannelDispatcher SERVER_CHANNEL_DISPATCHER = new ServerChannelDispatcher();
 
+    /**
+     * 服务限流器缓存，保存服务端限流器
+     */
+    public static final Map<String, ServerServiceSemaphoreWrapper> SERVER_SERVICE_SEMAPHORE_MAP = new ConcurrentHashMap<>(64);
 }

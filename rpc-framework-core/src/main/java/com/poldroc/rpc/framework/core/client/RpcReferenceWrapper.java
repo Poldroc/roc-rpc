@@ -43,6 +43,14 @@ public class RpcReferenceWrapper<T> {
         attatchments.put(SERVICE_URL, Serviceurl);
     }
 
+    public void setTimeOut(int timeOut) {
+        attatchments.put(TIME_OUT, timeOut);
+    }
+
+    public String getTimeOUt() {
+        return String.valueOf(attatchments.get(TIME_OUT));
+    }
+
     public String getServiceToken() {
         return String.valueOf(attatchments.get(SERVICE_TOKEN));
     }

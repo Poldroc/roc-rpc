@@ -4,6 +4,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
 
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.DEFAULT_DECODE_CHAR;
+
 /**
  * RPC请求的编码器
  * 继承自MessageToByteEncoder，将RpcProtocol编码为ByteBuf
@@ -24,5 +26,7 @@ public class RpcEncoder extends MessageToByteEncoder<RpcProtocol> {
         out.writeShort(msg.getMagicNumber());
         out.writeInt(msg.getContentLength());
         out.writeBytes(msg.getContent());
+        // 写入分隔符
+        out.writeBytes(DEFAULT_DECODE_CHAR.getBytes());
     }
 }
