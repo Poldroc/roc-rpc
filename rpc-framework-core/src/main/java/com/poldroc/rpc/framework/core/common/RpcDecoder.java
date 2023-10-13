@@ -35,7 +35,7 @@ public class RpcDecoder extends ByteToMessageDecoder {
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf byteBuf, List<Object> out) throws Exception {
         // 可读字节数小于基本长度，直接返回
-        if (byteBuf.readableBytes() < BASE_LENGTH) {
+        if (byteBuf.readableBytes() >= BASE_LENGTH) {
             if (!(byteBuf.readShort() == MAGIC_NUMBER)) {
                 ctx.close();
                 return;

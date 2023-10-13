@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.Iterator;
 import java.util.List;
 
+import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.RESP_MAP;
 import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.SERVICE_URL;
 
 /**
@@ -22,15 +23,23 @@ public class DirectInvokeFilterImpl implements ClientFilter {
     public void doFilter(List<ChannelFutureWrapper> src, RpcInvocation rpcInvocation) {
         log.info("******** DirectInvokeFilterImpl doFilter ********");
         String url = (String) rpcInvocation.getAttachments().get(SERVICE_URL);
-        if (CommonUtils.isEmpty(url)) {
-            log.info("url is empty in {}", rpcInvocation.toString());
+        if(CommonUtils.isEmpty(url)){
             return;
         }
-        // 过滤掉不属于该ip的服务提供者
-        src.removeIf(channelFutureWrapper -> !(channelFutureWrapper.getHost() + ":" + channelFutureWrapper.getPort()).equals(url));
-        if(CommonUtils.isEmptyList(src)){
-            throw new RuntimeException("no match provider url for "+ url);
+        Iterator<ChannelFutureWrapper> channelFutureWrapperIterator = src.iterator();
+        while (channelFutureWrapperIterator.hasNext()){
+            ChannelFutureWrapper channelFutureWrapper = channelFutureWrapperIterator.next();
+            if(!(channelFutureWrapper.getHost()+":"+channelFutureWrapper.getPort()).equals(url)){
+                channelFutureWrapperIterator.remove();
+            }
         }
-
+        if(CommonUtils.isEmptyList(src)){
+            rpcInvocation.setRetry(0);
+            rpcInvocation.setE(new RuntimeException("no provider match for service " + rpcInvocation.getTargetServiceName()  + " in url " + url));
+            rpcInvocation.setResponse(null);
+            // 直接交给响应线程那边处理（响应线程在代理类内部的invoke函数中，那边会取出对应的uuid的值，然后判断）
+            RESP_MAP.put(rpcInvocation.getUuid(), rpcInvocation);
+            throw new RuntimeException("no provider match for service " + rpcInvocation.getTargetServiceName() + " in url " + url);
+        }
     }
 }

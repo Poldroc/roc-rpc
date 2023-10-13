@@ -1,6 +1,8 @@
 package com.poldroc.rpc.framework.core.client;
 
+import com.esotericsoftware.minlog.Log;
 import com.poldroc.rpc.framework.core.common.ChannelFutureWrapper;
+import com.poldroc.rpc.framework.core.common.RpcInvocation;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
 import com.poldroc.rpc.framework.core.registry.zookeeper.ProviderNodeInfo;
@@ -125,17 +127,30 @@ public class ConnectionHandler {
      * @param providerServiceName
      * @return
      */
-    public static ChannelFuture getChannelFuture(String providerServiceName) {
-        // 获取与指定服务名称关联的连接信息列表
+    public static ChannelFuture getChannelFuture(RpcInvocation rpcInvocation) {
+        String providerServiceName = rpcInvocation.getTargetServiceName();
         ChannelFutureWrapper[] channelFutureWrappers = SERVICE_ROUTER_MAP.get(providerServiceName);
-        if (channelFutureWrappers == null || channelFutureWrappers.length == 0) {
-            throw new RuntimeException("no provider exist for " + providerServiceName);
-        }
 
-        // 从连接信息列表中选择一个 ChannelFuture 对象，这里使用了随机选择的策略
+        if (channelFutureWrappers == null || channelFutureWrappers.length == 0) {
+            rpcInvocation.setRetry(0);
+            rpcInvocation.setE(new RuntimeException("no provider exist for " + providerServiceName));
+            rpcInvocation.setResponse(null);
+            // 直接交给响应线程那边处理（响应线程在代理类内部的invoke函数中，那边会取出对应的uuid的值，然后判断）
+            RESP_MAP.put(rpcInvocation.getUuid(),rpcInvocation);
+            log.error("channelFutureWrapper is null");
+            return null;
+        }
+        List<ChannelFutureWrapper> channelFutureWrappersList = new ArrayList<>(channelFutureWrappers.length);
+        for (int i = 0; i < channelFutureWrappers.length; i++) {
+            channelFutureWrappersList.add(channelFutureWrappers[i]);
+        }
+        //在客户端会做分组的过滤操作
+        //这里不能用Arrays.asList 因为它所生成的list是一个不可修改的list
+        CLIENT_FILTER_CHAIN.doFilter(channelFutureWrappersList, rpcInvocation);
         Selector selector = new Selector();
         selector.setProviderServiceName(providerServiceName);
         selector.setChannelFutureWrappers(channelFutureWrappers);
-        return ROUTER.select(selector).getChannelFuture();
+        ChannelFuture channelFuture = ROUTER.select(selector).getChannelFuture();
+        return channelFuture;
     }
 }

@@ -26,7 +26,7 @@ public class CommonClientCache {
     /**
      * 请求队列 用于存储请求信息
      */
-    public static BlockingQueue<RpcInvocation> SEND_QUEUE = new ArrayBlockingQueue<>(100);
+    public static BlockingQueue<RpcInvocation> SEND_QUEUE = new ArrayBlockingQueue(5000);
 
     /**
      * 响应结果集
@@ -47,6 +47,7 @@ public class CommonClientCache {
      * 服务提供者的地址
      */
     public static Set<String> SERVER_ADDRESS = new HashSet<>();
+
     /**
      * 每次进行远程调用的时候都是从这里面去选择服务提供者
      */

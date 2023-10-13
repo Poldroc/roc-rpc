@@ -120,6 +120,7 @@ public class Server {
                 ch.pipeline().addLast(new ServerHandler());
             }
         });
+        // 批量暴露服务信息
         this.batchExportUrl();
         // 开始准备接收请求的任务
         SERVER_CHANNEL_DISPATCHER.startDataConsume();
@@ -204,6 +205,7 @@ public class Server {
         serviceUrl.addParameter(PORT, String.valueOf(serverConfig.getServerPort()));
         serviceUrl.addParameter(GROUP, String.valueOf(serviceWrapper.getGroup()));
         serviceUrl.addParameter(LIMIT, String.valueOf(serviceWrapper.getLimit()));
+        serviceUrl.addParameter(WEIGHT, String.valueOf(serviceWrapper.getWeight()));
         // 设置服务端的限流器
         SERVER_SERVICE_SEMAPHORE_MAP.put(interfaceClass.getName(),new ServerServiceSemaphoreWrapper(serviceWrapper.getLimit()));
         PROVIDER_URL_SET.add(serviceUrl);
@@ -227,6 +229,7 @@ public class Server {
                 }
                 for (ServiceUrl serviceUrl : PROVIDER_URL_SET) {
                     REGISTRY_SERVICE.register(serviceUrl);
+                    log.info("[Server] export service {}",serviceUrl.getServiceName());
                 }
             }
         });

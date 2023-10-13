@@ -15,10 +15,11 @@ import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.*;
 /**
  * RPC服务端处理器，服务端的接收数据之后的处理器
  * 非共享模式，不存在线程安全问题
+ * 当数据抵达这个位置的时候，已经是以RpcProtocol的格式展现
  * @author Poldroc
  * @date 2023/9/13
  */
-@ChannelHandler.Sharable // 标记该类的实例可以被多个Channel共享，这通常在不涉及状态共享的情况下使用，确保处理器的实例可以被多个通道安全地共享
+@ChannelHandler.Sharable // 标记该类的实例可以被多个Channel共享，这通常在不涉及状态共享的情况下使用，确保处理器的实例可以被多个通道安全地共享*/
 public class ServerHandler extends ChannelInboundHandlerAdapter {
 
     /**

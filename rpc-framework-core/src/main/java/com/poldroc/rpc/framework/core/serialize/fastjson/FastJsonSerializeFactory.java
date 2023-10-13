@@ -4,9 +4,11 @@ import com.alibaba.fastjson.JSON;
 import com.poldroc.rpc.framework.core.serialize.SerializeFactory;
 
 /**
- * @Author linhao
- * @Date created in 9:51 下午 2022/1/17
+ * FastJson序列化工厂
+ * @author Poldroc
+ * @date 2023/10/11
  */
+
 public class FastJsonSerializeFactory implements SerializeFactory {
 
     @Override

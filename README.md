@@ -1,5 +1,7 @@
 # RPC-Framework-By-Poldroc
 
+
+
 ## 代理层
 
 - 基于Netty搭建了一套简单的服务端和客户端通信模型。
@@ -747,6 +749,106 @@ public class MaxConnectionLimitHandler extends ChannelInboundHandlerAdapter {
 使用tryAcquire则是一种“快速响应”的解决思路，当获取申请失败后，不会堵塞当前线程，而是立马通知客户端调用异常，然后发起二次重试，路由到其他节点。**至少这种策略相比于acquire来说不存在请求堆积，导致服务崩溃的风险因素。**
 
 
+
+限流部分的代码实现：
+
+划分为了**前置过滤器**和**后置过滤器。**
+
+- 前置过滤器：
+
+请求数据在执行实际业务函数之前需要会经过**前置过滤器**的逻辑，而限流组件则是在前置过滤器的最后一环，主要负责tryAcquire环节。
+
+```java
+package com.poldroc.rpc.framework.core.filter.server;
+
+import com.poldroc.rpc.framework.core.common.RpcInvocation;
+import com.poldroc.rpc.framework.core.common.ServerServiceSemaphoreWrapper;
+import com.poldroc.rpc.framework.core.common.annotations.SPI;
+import com.poldroc.rpc.framework.core.common.exceptiom.MaxServiceLimitRequestException;
+import com.poldroc.rpc.framework.core.filter.ServerFilter;
+import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.Semaphore;
+
+import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.SERVER_SERVICE_SEMAPHORE_MAP;
+/**
+ * 请求数据在执行实际业务函数之前需要会经过前置过滤器的逻辑，
+ * 而限流组件则是在前置过滤器的最后一环，主要负责tryAcquire环节
+ * @author Poldroc
+ * @date 2023/10/7
+ */
+
+@SPI("before")
+@Slf4j
+public class ServerServiceBeforeLimitFilterImpl implements ServerFilter {
+
+    @Override
+    public void doFilter(RpcInvocation rpcInvocation) {
+        String serviceName = rpcInvocation.getTargetServiceName();
+        ServerServiceSemaphoreWrapper serverServiceSemaphoreWrapper = SERVER_SERVICE_SEMAPHORE_MAP.get(serviceName);
+        // 从缓存中提取semaphore对象
+        Semaphore semaphore = serverServiceSemaphoreWrapper.getSemaphore();
+        // 尝试获取信号量
+        boolean tryResult = semaphore.tryAcquire();
+        // 如果获取失败，说明当前服务已经达到最大并发数，直接抛出异常
+        if (!tryResult) {
+            log.error("[ServerServiceBeforeLimitFilterImpl] {}'s max request is {},reject now", rpcInvocation.getTargetServiceName(), serverServiceSemaphoreWrapper.getMaxNums());
+            MaxServiceLimitRequestException rpcException = new MaxServiceLimitRequestException(rpcInvocation);
+            rpcInvocation.setE(rpcException);
+            throw rpcException;
+        }
+    }
+}
+
+```
+
+
+
+- 后置过滤器
+
+当业务核心逻辑执行完毕之后，会进入到**后置过滤器**中，这里面可以执行relase操作。
+
+```java
+package com.poldroc.rpc.framework.core.filter.server;
+
+import com.poldroc.rpc.framework.core.common.RpcInvocation;
+import com.poldroc.rpc.framework.core.common.ServerServiceSemaphoreWrapper;
+import com.poldroc.rpc.framework.core.common.annotations.SPI;
+import com.poldroc.rpc.framework.core.filter.ServerFilter;
+
+import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.SERVER_SERVICE_SEMAPHORE_MAP;
+/**
+ * 当业务核心逻辑执行完毕之后，会进入到后置过滤器中，这里面可以执行relase操作
+ * @author Poldroc
+ * @date 2023/10/7
+ */
+
+@SPI("after")
+public class ServerServiceAfterLimitFilterImpl implements ServerFilter {
+
+    @Override
+    public void doFilter(RpcInvocation rpcInvocation) {
+        String serviceName = rpcInvocation.getTargetServiceName();
+        ServerServiceSemaphoreWrapper serverServiceSemaphoreWrapper = SERVER_SERVICE_SEMAPHORE_MAP.get(serviceName);
+        serverServiceSemaphoreWrapper.getSemaphore().release();
+    }
+}
+
+```
+
+
+
+## 接入层
+
+SpringBoot的使用率更广泛，接入难度也比较低，所以下边会采用以SpringBoot自动装配的思路去设计这个接入层的代码
+
+**接入思路**
+
+开发对应的自动装配类，并且通过引入spi文件去让Spring扫描到该装配类即可。
+
+提供了starter的设计思路，遵循了“约定大于配置”的这种理念，只需要给对应的中间件编写好一个自动配置类以及一份spi文件，最后交给SpringBoot去扫描即可，整体难度会比较低。
 
 
 

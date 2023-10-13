@@ -1,4 +1,4 @@
 kryo=com.poldroc.rpc.framework.core.serialize.kryo.KryoSerializeFactory
 jdk=com.poldroc.rpc.framework.core.serialize.jdk.JdkSerializeFactory
 hessian=com.poldroc.rpc.framework.core.serialize.hessian.HessianSerializeFactory
-fastjson=com.poldroc.rpc.framework.core.serialize.fastjson.FastJsonSerializeFactory
+fastJson=com.poldroc.rpc.framework.core.serialize.fastjson.FastJsonSerializeFactory

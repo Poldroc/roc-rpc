@@ -11,6 +11,7 @@ import com.poldroc.rpc.framework.core.common.event.RpcListenerLoader;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
 import com.poldroc.rpc.framework.core.filter.ClientFilter;
 import com.poldroc.rpc.framework.core.filter.client.ClientFilterChain;
+import com.poldroc.rpc.framework.core.proxy.ProxyFactory;
 import com.poldroc.rpc.framework.core.proxy.jdk.JDKProxyFactory;
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
@@ -26,12 +27,16 @@ import com.poldroc.rpc.framework.core.serialize.jdk.JdkSerializeFactory;
 import com.poldroc.rpc.framework.core.serialize.kryo.KryoSerializeFactory;
 import com.poldroc.rpc.framework.interfaces.DataService;
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.channel.ChannelInitializer;
+import io.netty.handler.codec.DelimiterBasedFrameDecoder;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
@@ -49,6 +54,7 @@ import static com.poldroc.rpc.framework.core.spi.ExtensionLoader.EXTENSION_LOADE
  * 然后通过代理对象将数据放入发送队列，
  * 最后会有一个异步线程将发送队列内部的数据一个个地发送给到服务端，
  * 并且等待服务端响应对应的数据结果。
+ *
  * @author Poldroc
  * @date 2023/9/14
  */
@@ -69,7 +75,7 @@ public class Client {
     /**
      * 服务端监听器加载器
      */
-    private RpcListenerLoader RpcListenerLoader;
+    private RpcListenerLoader rpcListenerLoader;
 
     /**
      * netty配置对象
@@ -99,7 +105,7 @@ public class Client {
      *
      * @throws InterruptedException
      */
-    public RpcReference initClientApplication() throws InterruptedException {
+    public RpcReference initClientApplication() throws InterruptedException, IOException, ClassNotFoundException, InstantiationException, IllegalAccessException {
         // 客户端线程组
         EventLoopGroup clientGroup = new NioEventLoopGroup();
         // 创建一个启动器
@@ -108,6 +114,9 @@ public class Client {
         bootstrap.handler(new ChannelInitializer<SocketChannel>() {
             @Override
             protected void initChannel(SocketChannel ch) throws Exception {
+                // 设置分隔符
+                ByteBuf delimiter = Unpooled.copiedBuffer(DEFAULT_DECODE_CHAR.getBytes());
+                ch.pipeline().addLast(new DelimiterBasedFrameDecoder(clientConfig.getMaxServerRespDataSize(), delimiter));
                 // 管道中初始化一些逻辑，这里包含了编解码器和服务端响应处理器
                 ch.pipeline().addLast(new RpcEncoder());
                 ch.pipeline().addLast(new RpcDecoder());
@@ -115,15 +124,24 @@ public class Client {
             }
         });
         // 初始化RPC监听器加载器
-        RpcListenerLoader = new RpcListenerLoader();
-        RpcListenerLoader.init();
-        // 从本地加载客户端配置
+        rpcListenerLoader = new RpcListenerLoader();
+        rpcListenerLoader.init();
         this.clientConfig = PropertiesBootstrap.loadClientConfigFromLocal();
-        return new RpcReference(new JDKProxyFactory());
+        CLIENT_CONFIG = this.clientConfig;
+        // spi扩展的加载部分
+        this.initClientConfig();
+
+        // 代理工厂
+        EXTENSION_LOADER.loadExtension(ProxyFactory.class);
+        String proxyType = clientConfig.getProxyType();
+        LinkedHashMap<String, Class> classMap = EXTENSION_LOADER_CLASS_CACHE.get(ProxyFactory.class.getName());
+        Class proxyClassType = classMap.get(proxyType);
+        ProxyFactory proxyFactory = (ProxyFactory) proxyClassType.newInstance();
+        return new RpcReference(proxyFactory);
     }
 
     /**
-     * 启动服务之前需要预先订阅对应的dubbo服务
+     * 启动服务之前需要预先订阅对应的服务
      *
      * @param serviceBean
      */
@@ -131,11 +149,11 @@ public class Client {
         log.info("doSubscribeService start ====> serviceBean Name:{}", serviceBean.getName());
         if (ABSTRACT_REGISTER == null) {
             try {
-                // //使用自定义的SPI机制去加载配置
+                // 使用自定义的SPI机制去加载配置
                 EXTENSION_LOADER.loadExtension(RegistryService.class);
                 Map<String, Class> registerMap = EXTENSION_LOADER_CLASS_CACHE.get(RegistryService.class.getName());
-                Class registerClass =  registerMap.get(clientConfig.getRegisterType());
-                //
+                Class registerClass = registerMap.get(clientConfig.getRegisterType());
+                // 通过反射创建注册中心对象
                 ABSTRACT_REGISTER = (AbstractRegister) registerClass.newInstance();
             } catch (Exception e) {
                 throw new RuntimeException("registryServiceType unKnow,error is ", e);
@@ -146,7 +164,7 @@ public class Client {
         url.setServiceName(serviceBean.getName());
         url.addParameter(HOST, CommonUtils.getIpAddress());
         Map<String, String> result = ABSTRACT_REGISTER.getServiceWeightMap(serviceBean.getName());
-        URL_MAP.put(serviceBean.getName(),result);
+        URL_MAP.put(serviceBean.getName(), result);
         // 把客户端的信息注册到注册中心
         ABSTRACT_REGISTER.subscribe(url);
     }
@@ -170,19 +188,17 @@ public class Client {
                 }
             }
             ServiceUrl url = new ServiceUrl();
-            // url.setServiceName(providerServiceName);
-            url.addParameter("servicePath",providerUrl.getServiceName()+"/provider");
+            url.addParameter("servicePath", providerUrl.getServiceName() + "/provider");
             url.addParameter("providerIps", com.alibaba.fastjson.JSON.toJSONString(providerIps));
-            //客户端在此新增一个订阅的功能
+            // 客户端在此新增一个订阅的功能
             ABSTRACT_REGISTER.doAfterSubscribe(url);
         }
     }
 
     /**
      * 开启发送线程 专门从事将数据包发送给服务端，起到一个解耦的效果
-     *
      */
-    private void startClient() {
+    public void startClient() {
         log.info("======== start client ========");
         // 创建一个异步发送线程
         Thread asyncSendJob = new Thread(new AsyncSendJob());
@@ -194,19 +210,6 @@ public class Client {
      */
     class AsyncSendJob implements Runnable {
 
-        /**
-         * 通道的异步操作
-         */
-        private ChannelFuture channelFuture;
-
-        /**
-         * 构造函数
-         *
-         * @param channelFuture 通道的异步操作
-         */
-        public AsyncSendJob(ChannelFuture channelFuture) {
-            this.channelFuture = channelFuture;
-        }
 
         public AsyncSendJob() {
         }
@@ -216,26 +219,33 @@ public class Client {
          */
         @Override
         public void run() {
-            try {
-                // 阻塞模式
-                // 从发送队列中取出 RpcInvocation 对象（需要发送的远程调用信息）
-                RpcInvocation data = SEND_QUEUE.take();
-                // 将 RpcInvocation 封装成 RpcProtocol 对象，并发送给服务端
-                String json = JSON.toJSONString(data);
-                RpcProtocol rpcProtocol = new RpcProtocol(json.getBytes());
-                ChannelFuture channelFuture = ConnectionHandler.getChannelFuture(data.getTargetServiceName());
-                channelFuture.channel().writeAndFlush(rpcProtocol);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } /*finally {
+            while (true) {
+                try {
+                    // 阻塞模式
+                    log.info("======== AsyncSendJob start ========");
+                    RpcInvocation rpcInvocation = SEND_QUEUE.take();
+                    log.info("rpcInvocation : {}", rpcInvocation);
+                    ChannelFuture channelFuture = ConnectionHandler.getChannelFuture(rpcInvocation);
+                    if (channelFuture != null) {
+                        Channel channel = channelFuture.channel();
+                        //如果出现服务端中断的情况需要兼容下
+                        if (channel.isOpen()) {
+                            RpcProtocol rpcProtocol = new RpcProtocol(CLIENT_SERIALIZE_FACTORY.serialize(rpcInvocation));
+                            channel.writeAndFlush(rpcProtocol);
+                        }
+                    }
+                } catch (Exception e) {
+                    // e.printStackTrace();
+                    log.error("[AsyncSendJob] run fail ", e);
+                } /*finally {
                 // 关闭客户端线程组
                 clientGroup.shutdownGracefully();
             }*/
+            }
         }
     }
 
     /**
-     *
      * SPI机制加载配置
      */
     private void initClientConfig() throws IOException, ClassNotFoundException, InstantiationException, IllegalAccessException {

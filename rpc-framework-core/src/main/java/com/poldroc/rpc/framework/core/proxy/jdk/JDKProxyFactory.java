@@ -12,6 +12,9 @@ import java.lang.reflect.Proxy;
  */
 
 public class JDKProxyFactory implements ProxyFactory {
+    public JDKProxyFactory() {
+
+    }
 
     /**
      * 根据传入的RpcReferenceWrapper对象获取代理对象

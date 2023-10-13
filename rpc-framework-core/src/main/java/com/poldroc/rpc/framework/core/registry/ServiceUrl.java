@@ -2,12 +2,13 @@ package com.poldroc.rpc.framework.core.registry;
 
 import com.poldroc.rpc.framework.core.registry.zookeeper.ProviderNodeInfo;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
+
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
-import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.HOST;
-import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.PORT;
+import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.*;
 
 /**
  * 服务url
@@ -17,6 +18,7 @@ import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.PORT;
  * @date 2023/9/15
  */
 @Data
+@Slf4j
 public class ServiceUrl {
 
     /**
@@ -50,7 +52,10 @@ public class ServiceUrl {
     public static String buildProviderUrlStr(ServiceUrl url) {
         String host = url.getParameters().get(HOST);
         String port = url.getParameters().get(PORT);
-        return new String((url.getApplicationName() + ";" + url.getServiceName() + ";" + host + ":" + port + ";" + System.currentTimeMillis()).getBytes(), StandardCharsets.UTF_8);
+        String group = url.getParameters().get(GROUP);
+        String weight = url.getParameters().get(WEIGHT);
+        return new String((url.getApplicationName() + ";" + url.getServiceName() + ";" + host + ":" + port + ";" + System.currentTimeMillis() + ";" + weight + ";" + group).getBytes(), StandardCharsets.UTF_8);
+
     }
 
     /**
@@ -70,12 +75,15 @@ public class ServiceUrl {
      * @return
      */
     public static ProviderNodeInfo buildURLFromUrlStr(String providerNodeStr) {
-        String[] items = providerNodeStr.split("/");
+        String[] items = providerNodeStr.split(";");
+        log.info("providerNodeStr : {}", providerNodeStr);
         ProviderNodeInfo providerNodeInfo = new ProviderNodeInfo();
+        providerNodeInfo.setApplicationName(items[0]);
         providerNodeInfo.setServiceName(items[1]);
         providerNodeInfo.setAddress(items[2]);
         providerNodeInfo.setRegistryTime(items[3]);
         providerNodeInfo.setWeight(Integer.valueOf(items[4]));
+        providerNodeInfo.setGroup(String.valueOf(items[5]));
         return providerNodeInfo;
     }
 }

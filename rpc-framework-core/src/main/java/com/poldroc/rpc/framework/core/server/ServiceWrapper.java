@@ -28,7 +28,12 @@ public class ServiceWrapper {
     /**
      * 限流策略
      */
-    private Integer limit = -1;
+    private Integer limit = 10;
+
+    /**
+     * 权重
+     */
+    private Integer weight = 100;
 
 
     public ServiceWrapper(Object serviceObj) {

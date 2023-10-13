@@ -6,8 +6,10 @@ import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
 import com.poldroc.rpc.framework.core.filter.ClientFilter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Iterator;
 import java.util.List;
 
+import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.RESP_MAP;
 import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.GROUP;
 
 /**
@@ -23,10 +25,20 @@ public class GroupFilterImpl implements ClientFilter {
     public void doFilter(List<ChannelFutureWrapper> src, RpcInvocation rpcInvocation) {
         log.info("******** GroupFilterImpl doFilter ********");
         String group = String.valueOf(rpcInvocation.getAttachments().get(GROUP));
-        // 过滤掉不属于该分组的服务提供者
-        src.removeIf(channelFutureWrapper -> !channelFutureWrapper.getGroup().equals(group));
+        Iterator<ChannelFutureWrapper> channelFutureWrapperIterator = src.iterator();
+        while (channelFutureWrapperIterator.hasNext()) {
+            ChannelFutureWrapper channelFutureWrapper = channelFutureWrapperIterator.next();
+            if (!channelFutureWrapper.getGroup().equals(group)) {
+                channelFutureWrapperIterator.remove();
+            }
+        }
         if (CommonUtils.isEmptyList(src)) {
-            throw new RuntimeException("no provider match for group " + group);
+            rpcInvocation.setRetry(0);
+            rpcInvocation.setE(new RuntimeException("no provider match for service " + rpcInvocation.getTargetServiceName() + " in group " + group));
+            rpcInvocation.setResponse(null);
+            //直接交给响应线程那边处理（响应线程在代理类内部的invoke函数中，那边会取出对应的uuid的值，然后判断）
+            RESP_MAP.put(rpcInvocation.getUuid(), rpcInvocation);
+            throw new RuntimeException("no provider match for service " + rpcInvocation.getTargetServiceName() + " in group " + group);
         }
     }
 }

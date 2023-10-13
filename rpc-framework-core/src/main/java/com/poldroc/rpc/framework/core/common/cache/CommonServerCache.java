@@ -7,8 +7,10 @@ import com.poldroc.rpc.framework.core.filter.server.ServerAfterFilterChain;
 import com.poldroc.rpc.framework.core.filter.server.ServerBeforeFilterChain;
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
+import com.poldroc.rpc.framework.core.registry.zookeeper.AbstractRegister;
 import com.poldroc.rpc.framework.core.serialize.SerializeFactory;
 import com.poldroc.rpc.framework.core.server.ServiceWrapper;
+import io.netty.util.internal.ConcurrentSet;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,17 +30,17 @@ public class CommonServerCache {
     /**
      * 服务端缓存，保存服务实现的接口名和服务实现类的映射关系
      */
-    public static final Map<String,Object> PROVIDER_CLASS_MAP = new HashMap<>();
+    public static final Map<String,Object> PROVIDER_CLASS_MAP = new ConcurrentHashMap<>();
 
     /**
      * 服务端缓存，保存服务url
      */
-    public static final Set<ServiceUrl> PROVIDER_URL_SET = new HashSet<>();
+    public static final Set<ServiceUrl> PROVIDER_URL_SET = new ConcurrentSet<>();
 
     /**
      * 注册中心服务
      */
-    public static RegistryService REGISTRY_SERVICE;
+    public static AbstractRegister REGISTRY_SERVICE;
 
     /**
      * 服务端序列化工厂

@@ -2,6 +2,7 @@ package com.poldroc.rpc.framework.core.common;
 
 import lombok.Data;
 
+import java.io.Serializable;
 import java.util.Arrays;
 
 import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.MAGIC_NUMBER;
@@ -13,7 +14,7 @@ import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.MAGIC
  */
 
 @Data
-public class RpcProtocol {
+public class RpcProtocol implements Serializable {
     private static final long serialVersionUID = 4359452337712339597L;
 
     /**

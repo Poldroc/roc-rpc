@@ -6,6 +6,7 @@ import com.poldroc.rpc.framework.core.common.event.RpcListenerLoader;
 import com.poldroc.rpc.framework.core.common.event.RpcNodeChangeEvent;
 import com.poldroc.rpc.framework.core.common.event.RpcUpdateEvent;
 import com.poldroc.rpc.framework.core.common.event.data.SUrlChangeWrapper;
+import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
 import com.poldroc.rpc.framework.core.registry.RegistryService;
 import com.poldroc.rpc.framework.core.registry.ServiceUrl;
 import lombok.extern.slf4j.Slf4j;
@@ -161,15 +162,28 @@ public class ZookeeperRegister extends AbstractRegister implements RegistryServi
             public void process(WatchedEvent watchedEvent) {
                 log.info("[watchChildNodeData ]" + watchedEvent);
                 String path = watchedEvent.getPath();
+                log.info("收到子节点" + path + "数据变化");
                 List<String> childrenDataList = zkClient.getChildrenData(path);
-                SUrlChangeWrapper sUrlChangeWrapper = new SUrlChangeWrapper();
-                sUrlChangeWrapper.setProviderUrl(childrenDataList);
-                sUrlChangeWrapper.setServiceName(path.split("/")[2]);
-                //自定义的一套事件监听组件
-                RpcEvent rpcEvent = new RpcUpdateEvent(sUrlChangeWrapper);
+                if (CommonUtils.isEmptyList(childrenDataList)) {
+                    watchChildNodeData(path);
+                    return;
+                }
+                SUrlChangeWrapper urlChangeWrapper = new SUrlChangeWrapper();
+                Map<String, String> nodeDetailInfoMap = new HashMap<>();
+                for (String providerAddress : childrenDataList) {
+                    String nodeDetailInfo = zkClient.getNodeData(path + "/" + providerAddress);
+                    nodeDetailInfoMap.put(providerAddress, nodeDetailInfo);
+                }
+                urlChangeWrapper.setNodeDataUrl(nodeDetailInfoMap);
+                urlChangeWrapper.setProviderUrl(childrenDataList);
+                urlChangeWrapper.setServiceName(path.split("/")[2]);
+                RpcEvent rpcEvent = new RpcUpdateEvent(urlChangeWrapper);
                 RpcListenerLoader.sendEvent(rpcEvent);
-                //收到回调之后再注册一次监听，这样能保证一直都收到消息
+                // 收到回调之后再注册一次监听，这样能保证一直都收到消息
                 watchChildNodeData(path);
+                for (String providerAddress : childrenDataList) {
+                    watchNodeDataChange(path + "/" + providerAddress);
+                }
             }
         });
     }

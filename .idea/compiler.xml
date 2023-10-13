@@ -7,7 +7,10 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="rpc-framework-spring-starter" />
         <module name="rpc-framework-core" />
+        <module name="rpc-framework-consumer" />
+        <module name="rpc-framework-provider" />
         <module name="rpc-framework-interface" />
       </profile>
     </annotationProcessing>

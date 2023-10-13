@@ -26,6 +26,7 @@ public class ProviderNodeDataChangeListener implements RpcListener<RpcNodeChange
         for (ChannelFutureWrapper channelFutureWrapper : channelFutureWrappers) {
             String address = channelFutureWrapper.getHost()+":"+channelFutureWrapper.getPort();
             if(address.equals(providerNodeInfo.getAddress())){
+                channelFutureWrapper.setGroup(providerNodeInfo.getGroup());
                 // 修改权重
                 channelFutureWrapper.setWeight(providerNodeInfo.getWeight());
                 ServiceUrl url = new ServiceUrl();
