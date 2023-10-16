@@ -122,7 +122,7 @@ com.poldroc.rpc.framework.core.server.ServerHandler#channelRead
 
 ### 自己实现SPI机制
 
-这块的具体设计思路其实比较简单，通过当前Class的类加载器去加载META-INF/rpc/目录底下存在的资源文件，并且将它们放入一个LinkedHashMap中。核心代码 如下：
+这块的具体设计思路其实比较简单，通过当前Class的类加载器去加载META-INF/rpc/目录底下以类路径命名的资源文件，并且将它们放入一个LinkedHashMap中。核心代码 如下：
 
 ```java
 package com.poldroc.rpc.framework.core.spi;
