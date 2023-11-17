@@ -1,4 +1,4 @@
-package com.poldroc.rpc.framework.core.common.exceptiom;
+package com.poldroc.rpc.framework.core.common.exception;
 
 import com.poldroc.rpc.framework.core.common.RpcInvocation;
 /**

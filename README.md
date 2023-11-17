@@ -1,8 +1,113 @@
-# RPC-Framework-By-Poldroc
+# 
+
+# RPC框架总体基本流程
+
+![RPC框架基本流程 ](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202311162112302.png)
 
 
 
-## 代理层
+# RPC项目树
+
+## 模块树
+
+```
+├── rpc-framework-consumer                   -> 服务消费者测试
+├── rpc-framework-core                       -> rpc核心实现逻辑模块
+├── rpc-framework-interface                  -> 远程服务接口
+├── rpc-framework-provider                   -> 服务提供者测试
+└── rpc-framework-spring-starter             -> spring-starter接入类
+```
+
+## 核心模块树
+
+```
+└─core
+	├─client						-> 客户端相关类（请求处理、启动加载）
+	├─common						-> 通用模块
+	│  ├─annotations				-> 项目注解包
+	│  ├─cache						-> 项目全局缓存
+	│  ├─config						-> 项目配置（服务端、客户端属性配置）
+	│  ├─constants					-> 项目常量
+	│  ├─event						-> 事件监听机制
+	│  │  ├─data
+	│  │  └─listener
+	│  ├─exception					-> 全局异常
+	│  └─utils						-> 项目工具包
+	├─dispatcher					-> 服务端请求解耦
+	├─filter						-> 责任链模式过滤请求
+	│  ├─client
+	│  └─server
+	├─proxy							-> 动态代理
+	│  └─jdk
+	├─registry						-> 注册中心
+	│  └─zookeeper
+	├─router						-> 路由选择负载均衡
+	├─serialize						-> 序列化与反序列化
+	│  ├─fastjson
+	│  ├─hessian
+	│  ├─jdk
+	│  ├─kryo
+	│  └─rpc
+	├─server						-> 服务端相关类（请求处理、启动加载）
+	└─spi							-> SPI自定义加载类
+	   └─jdk
+```
+
+
+
+# 自定义配置
+
+在项目模块的resouces文件下，有 `rpc.properties` 文件，用于配置Consumer（服务消费者）与Provider（服务提供者）的基本属性
+
+1. Consumer基本配置
+
+```properties
+# 注册中心地址
+rpc.registerAddr=localhost:2181
+# 注册中心类型
+rpc.registerType=zookeeper
+# 应用名
+rpc.applicationName=rpc-consumer
+# 动态代理类型
+rpc.proxyType=jdk
+# 路由策略类型
+rpc.router=rotate
+# 序列化类型
+rpc.clientSerialize=fastJson
+# 请求超时时间
+rpc.client.default.timeout=3000
+# 最大发送数据包
+rpc.client.max.data.size=4096
+```
+
+2. Provider基本配置
+
+```properties
+# 服务提供者端口号
+rpc.serverPort=9093
+# 服务提供者名称
+rpc.applicationName=rpc-provider
+# 注册中心地址
+rpc.registerAddr=localhost:2181
+# 注册中心类型
+rpc.registerType=zookeeper
+# 序列化类型
+rpc.serverSerialize=fastJson
+# 服务端异步处理队列大小
+rpc.server.queue.size=513
+# 服务端线程池大小
+rpc.server.biz.thread.nums=257
+# 服务端最大连接数
+rpc.server.max.connection=100
+# 服务端可接收数据包最大值
+rpc.server.max.data.size=4096
+```
+
+
+
+# RPC项目介绍
+
+## 1. 代理层
 
 - 基于Netty搭建了一套简单的服务端和客户端通信模型。
 - 通过自定义协议体RpcProtocol的方式来解决网络粘包和拆包的问题。
@@ -11,13 +116,227 @@
 
 ![image-20230917012659415](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202309170126607.png)
 
+**采用JDK类代理，执行的逻辑为：将请求方法放入SEND_QUEUE队列中，自旋等待结果响应结果（从RESP_MAP中取出）**
+
+关键代码如下：
+
+```java
+// 放入阻塞队列中
+SEND_QUEUE.add(rpcInvocation);
+RESP_MAP.put(rpcInvocation.getUuid(), OBJECT);
+// 自旋
+while (...) {
+    Object object = RESP_MAP.get(rpcInvocation.getUuid());
+    if (object instanceof RpcInvocation) {
+        return rpcInvocationResp.getResponse();
+    }
+}
+```
+
+### 1.1 基本流程
+
+1. Client启动时会开启一个异步线程阻塞队列，等待接收代理类放入的RpcInvocation，并将其顺序发送给对应Server
+
+   ```java
+   asyncSendJob.start();
+   // 异步线程 run代码：真正执行网络通信的操作
+   RpcInvocation rpcInvocation = SEND_QUEUE.take(); // 阻塞等待接收代理类放入RpcInvocation
+   ChannelFuture channelFuture = ConnectionHandler.getChannelFuture(rpcInvocation);
+   if (channelFuture != null) {
+       Channel channel = channelFuture.channel();
+       // 如果出现服务端中断的情况需要兼容下
+       if (channel.isOpen()) {
+           RpcProtocol rpcProtocol = new RpcProtocol(CLIENT_SERIALIZE_FACTORY.serialize(rpcInvocation));
+           channel.writeAndFlush(rpcProtocol);
+       }
+   }
+   ```
+
+2. Client先通过代理类为RpcInvocation（RpcProtocol中content的具体实现）设置必要的参数，
+
+   -   如：目标服务、目标方法、参数、UUID等，其中UUID是为了保证Client接收结果时判断一致
+
+   代理类还有如下几点核心操作：
+
+   -   将该uuid放入一个结果集map中，key为uuid，value为NULL对象
+   -   将封装好的RpcInvocation类放入阻塞队列中
+   -   最后代理类开始自旋一定时间，从结果集map中通过uuid获取其value：RpcInvocation，从中获取response结果
+
+3. 异步线程阻塞队列阻塞式地获取到RpcInvocation后，将其再次封装为RpcProtocol（包含有magicNumber、content、contentLength），经过Encoder编码后发送给Server
+
+4. Server收到后进行Decode解码，ServerHandler将解码后的结果转为RpcProtocol，并获取其content，将content再转为RpcInvocation类。从该类中获取对应的目标服务属性，通过该属性从map（专门用来保存已经注册的服务信息）中找到对应服务，再通过目标方法属性从服务中找到对应的方法，并invoke执行得到返回结果。
+
+   注意，之前传递的RpcInvocation类的response为空，为它set返回结果。
+
+   最后将完整的RpcInvocation再次封装为RpcProtocol类并通过Encoder编码发送给Client
+
+5. Client通过Decoder将数据包解码，经由ClientHandler将解码后的结果转为RpcProtocol，再将其cotent转为RpcInvocation，通过之前的结果集map判断请求与响应是否一致。若一致，则将其放入结果集map，此时自旋等待的代理类便可从中取到RpcInvocation，并返回给Client。
 
 
-## 注册中心
+
+
+
+
+
+
+
+
+
+## 2. 注册中心
 
 ![image-20230917013114895](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202309170131966.png)
 
 
+
+
+
+**Zookeeper注册节点结果**
+
+![注册节点结构](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202311172333783.png)
+
+先定义一个rpc的根节点，接着是不同的服务名称（例如:com.poldroc.UserService）作为二级节点，在二级节点下划分了provider和consumer节点。provider下存放的数据以ip+端口的格式存储，consumer下边存放具体的服务调用服务名与地址。
+
+
+
+```
+/rpc/com.poldroc.rpc.framework.core.server.DataService/provider/127.0.0.1:9093
+```
+
+添加Zookeeper注册中心后
+
+### 2.1 Server端实现
+
+核心代码
+
+```java
+        server = new Server();
+        // 初始化当前服务提供者的基本信息
+        server.initServerConfig();
+        // 加载RPC监听器
+        RpcListenerLoader rpcListenerLoader = new RpcListenerLoader();
+        rpcListenerLoader.init();
+        for (String beanName : beanMap.keySet()) {
+            Object bean = beanMap.get(beanName);
+            // 获取每个Bean的ARpcService注解，用于获取一些配置信息
+            ARpcService aRpcService = bean.getClass().getAnnotation(ARpcService.class);
+            ServiceWrapper dataServiceServiceWrapper = new ServiceWrapper(bean, aRpcService.group());
+            dataServiceServiceWrapper.setServiceToken(aRpcService.serviceToken());
+            dataServiceServiceWrapper.setLimit(aRpcService.limit());
+            // RPC服务暴露给RPC框架，以便客户端可以调用
+            server.exportService(dataServiceServiceWrapper);
+            LOGGER.info(">>>>>>>>>>>>>>> [rpc] {} export success! >>>>>>>>>>>>>>> ",beanName);
+        }
+        ApplicationShutdownHook.registryShutdownHook();
+        // 启动服务端
+        server.startApplication();
+```
+
+* 在`initServerConfig`初始化配置的方法中
+
+  1. **加载服务器配置:**
+
+     ```java
+     ServerConfig serverConfig = PropertiesBootstrap.loadServerConfigFromLocal();
+     this.setServerConfig(serverConfig);
+     SERVER_CONFIG = serverConfig;
+     ```
+
+     这段代码从`PropertiesBootstrap`类中的`loadServerConfigFromLocal`方法中加载服务器配置。获取到的`ServerConfig`对象然后通过`setServerConfig`方法设置为当前实例，并存储在`SERVER_CONFIG`字段中。
+
+  2. **初始化服务端通道分发器:**
+
+     ```java
+     SERVER_CHANNEL_DISPATCHER.init(SERVER_CONFIG.getServerQueueSize(), SERVER_CONFIG.getServerBizThreadNums());
+     ```
+
+     通过提供从加载的服务器配置获取的队列大小和业务线程数，初始化服务器通道调度程序。
+
+  3. **初始化序列化:**
+
+     ```java
+     String serverSerialize = serverConfig.getServerSerialize();
+     EXTENSION_LOADER.loadExtension(SerializeFactory.class);
+     LinkedHashMap<String, Class> serializeFactoryClassMap = EXTENSION_LOADER_CLASS_CACHE.get(SerializeFactory.class.getName());
+     Class serializeFactoryClass = serializeFactoryClassMap.get(serverSerialize);
+     SERVER_SERIALIZE_FACTORY = (SerializeFactory) serializeFactoryClass.newInstance();
+     ```
+
+     根据配置的序列化类型，初始化序列化机制。它加载`SerializeFactory`扩展，根据配置的序列化类型检索相应的类，并实例化该类的对象，将其设置为`SERVER_SERIALIZE_FACTORY`。
+
+  4. **初始化过滤器链:**
+
+     ```java
+     EXTENSION_LOADER.loadExtension(ServerFilter.class);
+     LinkedHashMap<String, Class> serverFilterClassMap = EXTENSION_LOADER_CLASS_CACHE.get(ServerFilter.class.getName());
+     ServerBeforeFilterChain serverBeforeFilterChain = new ServerBeforeFilterChain();
+     ServerAfterFilterChain serverAfterFilterChain = new ServerAfterFilterChain();
+     for (String key : serverFilterClassMap.keySet()) {
+         // ...
+     }
+     SERVER_AFTER_FILTER_CHAIN = serverAfterFilterChain;
+     SERVER_BEFORE_FILTER_CHAIN = serverBeforeFilterChain;
+     ```
+
+     通过使用`EXTENSION_LOADER`加载服务器过滤器，根据它们的处理顺序（在处理之前或之后）使用`SPI`注解来区分。然后将过滤器添加到适当的过滤器链（`ServerBeforeFilterChain`和`ServerAfterFilterChain`），并将它们设置为`SERVER_BEFORE_FILTER_CHAIN`和`SERVER_AFTER_FILTER_CHAIN`字段。
+
+  
+
+* `rpcListenerLoader.init()` 加载服务更新监听器、服务注销监听器、服务节点数据变化监听器
+
+* 在`exportService`方法中，将将服务实现的接口名和服务实现类的映射关系存入`PROVIDER_CLASS_MAP`，将服务提供者添加到`PROVIDER_URL_SET`中
+
+  ServiceUrl类是配置类，基于其进行存储
+
+  ```java
+  // 将服务实现的接口名和服务实现类的映射关系存入缓存
+  PROVIDER_CLASS_MAP.put(interfaceClass.getName(), serviceBean);
+  ServiceUrl serviceUrl = new ServiceUrl();        
+  serviceUrl.setServiceName(interfaceClass.getName());        
+  serviceUrl.setApplicationName(serverConfig.getApplicationName());        
+  // 设置服务提供者的IP地址和端口号        
+  serviceUrl.addParameter(HOST, CommonUtils.getIpAddress());        
+  serviceUrl.addParameter(PORT, String.valueOf(serverConfig.getServerPort()));        
+  serviceUrl.addParameter(GROUP, String.valueOf(serviceWrapper.getGroup()));        
+  serviceUrl.addParameter(LIMIT, String.valueOf(serviceWrapper.getLimit()));        
+  serviceUrl.addParameter(WEIGHT, String.valueOf(serviceWrapper.getWeight()));
+  PROVIDER_URL_SET.add(serviceUrl);
+  ```
+
+  
+
+* 在`startApplication`方法中，调用`batchExportUrl`方法，开启异步任务，从`PROVIDER_URL_SET`中获取serviceUrl，进行服务注册REGISTRY_SERVICE.register(serviceUrl);
+
+  其中registerService由ZookeeperRegister实现
+
+  ```java
+      /**
+       * 在zooKeeper中注册服务提供者
+       * 注册该服务 -> 本质是在Zookeeper中建立相应的节点
+       * @param sUrl 服务url
+       */
+      @Override
+      public void register(ServiceUrl sUrl) {
+          if (!this.zkClient.existNode(ROOT)) {
+              // 首先检查根路径是否存在，如果不存在则创建它
+              zkClient.createPersistentData(ROOT, "");
+          }
+          // 构建URL字符串并使用临时节点在zooKeeper中创建服务提供者的路径
+          String urlStr = ServiceUrl.buildProviderUrlStr(sUrl);
+          if (!zkClient.existNode(getProviderPath(sUrl))) {
+              zkClient.createTemporaryData(getProviderPath(sUrl), urlStr);
+          } else {
+              zkClient.deleteNode(getProviderPath(sUrl));
+              zkClient.createTemporaryData(getProviderPath(sUrl), urlStr);
+          }
+          super.register(sUrl); // -> PROVIDER_URL_SET.add(url);
+      }
+  ```
+
+  
+
+  
+
+  
 
 
 
@@ -764,7 +1083,7 @@ package com.poldroc.rpc.framework.core.filter.server;
 import com.poldroc.rpc.framework.core.common.RpcInvocation;
 import com.poldroc.rpc.framework.core.common.ServerServiceSemaphoreWrapper;
 import com.poldroc.rpc.framework.core.common.annotations.SPI;
-import com.poldroc.rpc.framework.core.common.exceptiom.MaxServiceLimitRequestException;
+import com.poldroc.rpc.framework.core.common.exception.MaxServiceLimitRequestException;
 import com.poldroc.rpc.framework.core.filter.ServerFilter;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
@@ -773,6 +1092,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.Semaphore;
 
 import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.SERVER_SERVICE_SEMAPHORE_MAP;
+
 /**
  * 请求数据在执行实际业务函数之前需要会经过前置过滤器的逻辑，
  * 而限流组件则是在前置过滤器的最后一环，主要负责tryAcquire环节

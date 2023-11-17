@@ -1,7 +1,7 @@
 package com.poldroc.rpc.framework.core.filter.server;
 
 import com.poldroc.rpc.framework.core.common.RpcInvocation;
-import com.poldroc.rpc.framework.core.common.exceptiom.RpcException;
+import com.poldroc.rpc.framework.core.common.exception.RpcException;
 import com.poldroc.rpc.framework.core.common.utils.CommonUtils;
 import com.poldroc.rpc.framework.core.filter.ServerFilter;
 import com.poldroc.rpc.framework.core.server.ServiceWrapper;
@@ -9,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import static com.poldroc.rpc.framework.core.common.cache.CommonClientCache.RESP_MAP;
 import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.PROVIDER_SERVICE_WRAPPER_MAP;
-import static com.poldroc.rpc.framework.core.common.constants.RpcConstants.SERVICE_TOKEN;
 
 /**
  * 简单版本的token校验

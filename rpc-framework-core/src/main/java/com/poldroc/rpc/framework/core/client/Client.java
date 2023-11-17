@@ -228,7 +228,7 @@ public class Client {
                     ChannelFuture channelFuture = ConnectionHandler.getChannelFuture(rpcInvocation);
                     if (channelFuture != null) {
                         Channel channel = channelFuture.channel();
-                        //如果出现服务端中断的情况需要兼容下
+                        // 如果出现服务端中断的情况需要兼容下
                         if (channel.isOpen()) {
                             RpcProtocol rpcProtocol = new RpcProtocol(CLIENT_SERIALIZE_FACTORY.serialize(rpcInvocation));
                             channel.writeAndFlush(rpcProtocol);

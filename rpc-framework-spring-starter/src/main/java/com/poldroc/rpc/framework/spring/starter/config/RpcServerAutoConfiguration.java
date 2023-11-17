@@ -36,6 +36,7 @@ public class RpcServerAutoConfiguration implements InitializingBean, Application
         printBanner();
         long begin = System.currentTimeMillis();
         server = new Server();
+        // 初始化当前服务提供者的基本信息
         server.initServerConfig();
         // 加载RPC监听器
         RpcListenerLoader rpcListenerLoader = new RpcListenerLoader();

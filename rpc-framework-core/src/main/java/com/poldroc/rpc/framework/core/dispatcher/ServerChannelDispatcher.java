@@ -2,7 +2,7 @@ package com.poldroc.rpc.framework.core.dispatcher;
 
 import com.poldroc.rpc.framework.core.common.RpcInvocation;
 import com.poldroc.rpc.framework.core.common.RpcProtocol;
-import com.poldroc.rpc.framework.core.common.exceptiom.RpcException;
+import com.poldroc.rpc.framework.core.common.exception.RpcException;
 import com.poldroc.rpc.framework.core.server.ServerChannelReadData;
 
 import java.lang.reflect.Method;
