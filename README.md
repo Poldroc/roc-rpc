@@ -2,7 +2,7 @@
 
 # RPC框架总体基本流程
 
-![RPC框架基本流程3]([https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202311180015839.jpg](https://engroc.oss-cn-fuzhou.aliyuncs.com/daily_images/RPC%E6%A1%86%E6%9E%B6%E5%9F%BA%E6%9C%AC%E6%B5%81%E7%A8%8B3.jpg))
+![RPC框架基本流程3](https://engroc.oss-cn-fuzhou.aliyuncs.com/daily_images/RPC%E6%A1%86%E6%9E%B6%E5%9F%BA%E6%9C%AC%E6%B5%81%E7%A8%8B3.jpg)
 
 
 
