@@ -2,7 +2,7 @@
 
 # RPC框架总体基本流程
 
-![RPC框架基本流程 ](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202311162112302.png)
+![RPC框架基本流程2 ](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202311180012352.jpg)
 
 
 
@@ -190,7 +190,7 @@ while (...) {
 
 
 
-**Zookeeper注册节点结果**
+**Zookeeper注册节点结构**
 
 ![注册节点结构](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202311172333783.png)
 
