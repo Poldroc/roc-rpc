@@ -1,10 +1,6 @@
-# 
-
 # RPC框架总体基本流程
 
 ![RPC框架基本流程3](https://engroc.oss-cn-fuzhou.aliyuncs.com/daily_images/RPC%E6%A1%86%E6%9E%B6%E5%9F%BA%E6%9C%AC%E6%B5%81%E7%A8%8B3.jpg)
-
-
 
 # RPC项目树
 
@@ -24,16 +20,16 @@
 └─core
 	├─client						-> 客户端相关类（请求处理、启动加载）
 	├─common						-> 通用模块
-	│  ├─annotations				-> 项目注解包
+	│  ├─annotations				        -> 项目注解包
 	│  ├─cache						-> 项目全局缓存
 	│  ├─config						-> 项目配置（服务端、客户端属性配置）
-	│  ├─constants					-> 项目常量
+	│  ├─constants					        -> 项目常量
 	│  ├─event						-> 事件监听机制
 	│  │  ├─data
 	│  │  └─listener
-	│  ├─exception					-> 全局异常
+	│  ├─exception					        -> 全局异常
 	│  └─utils						-> 项目工具包
-	├─dispatcher					-> 服务端请求解耦
+	├─dispatcher					        -> 服务端请求解耦
 	├─filter						-> 责任链模式过滤请求
 	│  ├─client
 	│  └─server
@@ -190,7 +186,7 @@ while (...) {
 
 
 
-**Zookeeper注册节点结构**
+**Zookeeper注册节点结果**
 
 ![注册节点结构](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202311172333783.png)
 
@@ -332,31 +328,392 @@ while (...) {
       }
   ```
 
+
+
+### 2.2 Client端实现
+
+核心代码
+
+```java
+client = new Client();
+// RpcReference用于实现JDK代理
+RpcReference rpcReference = client.initClientApplication();
+//  // 订阅对应类型的服务，以便接收服务提供者的变更通知
+client.doSubscribeService(field.getType());
+ConnectionHandler.setBootstrap(client.getBootstrap());
+// 连接RPC服务端
+client.doConnectServer();
+client.startClient();
+```
+
+* 在`initClientApplication`方法中，除了进行Bootstrap等与Netty相关的初始化操作外，还进行了事件监听器的初始化、spi扩展的加载、代理工厂初始化
+
+* 在`doSubscribeService`方法中，初始化ZookeeperRegister，定义ServiceUrl。根据此ServiceUrl订阅相应的服务
+
+  ```java
+      /**
+       * 启动服务之前需要预先订阅对应的服务
+       *
+       * @param serviceBean
+       */
+      public void doSubscribeService(Class serviceBean) {
+          log.info("doSubscribeService start ====> serviceBean Name:{}", serviceBean.getName());
+          if (ABSTRACT_REGISTER == null) {
+              try {
+                  // 使用自定义的SPI机制去加载配置
+                  EXTENSION_LOADER.loadExtension(RegistryService.class);
+                  Map<String, Class> registerMap = EXTENSION_LOADER_CLASS_CACHE.get(RegistryService.class.getName());
+                  Class registerClass = registerMap.get(clientConfig.getRegisterType());
+                  // 通过反射创建注册中心对象
+                  ABSTRACT_REGISTER = (AbstractRegister) registerClass.newInstance();
+              } catch (Exception e) {
+                  throw new RuntimeException("registryServiceType unKnow,error is ", e);
+              }
+          }
+          ServiceUrl url = new ServiceUrl();
+          url.setApplicationName(clientConfig.getApplicationName());
+          url.setServiceName(serviceBean.getName());
+          url.addParameter(HOST, CommonUtils.getIpAddress());
+          Map<String, String> result = ABSTRACT_REGISTER.getServiceWeightMap(serviceBean.getName());
+          URL_MAP.put(serviceBean.getName(), result);
+          // 把客户端的信息注册到注册中心
+          ABSTRACT_REGISTER.subscribe(url); // 订阅该服务 -> 本质是在Zookeeper中建立相应的节点
+          // register方法中除了建立节点，还需要将url添加到SUBSCRIBE_SERVICE_LIST中
+          // -> SUBSCRIBE_SERVICE_LIST.add(url.getServiceName());
+      }
   
+  ```
 
-  
+* 在`doConnectServer`方法中，提前与所有已注册的服务建立连接，并监听这些服务的变化（上线、下线、更改等）
 
-  
+  1.   监听事件参照 `2.3`
+  2.   ConnectionHandler建立连接逻辑参照 `2.4`
+
+  ```java
+      /**
+       * 开始和各个provider建立连接
+       * 客户端和服务提供端建立连接的时候，会触发
+       */
+      public void doConnectServer() {
+          log.info("======== doConnectServer start ========");
+          // 遍历名为 SUBSCRIBE_SERVICE_LIST 的服务列表，这些服务列表是之前使用 doSubscribeService 方法订阅的服务
+          for (ServiceUrl providerUrl : SUBSCRIBE_SERVICE_LIST) {
+              // 从注册中心获取其 IP 地址列表
+              List<String> providerIps = ABSTRACT_REGISTER.getProviderIps(providerUrl.getServiceName());
+              for (String providerIp : providerIps) {
+                  try {
+                      // 循环遍历每个 IP 地址，调用 ConnectionHandler.connect 方法来与服务提供者建立连接
+                      ConnectionHandler.connect(providerUrl.getServiceName(), providerIp);
+                  } catch (InterruptedException e) {
+                      log.error("[doConnectServer] connect fail ", e);
+                  }
+              }
+              ServiceUrl url = new ServiceUrl();
+              url.addParameter("servicePath", providerUrl.getServiceName() + "/provider");
+              url.addParameter("providerIps", com.alibaba.fastjson.JSON.toJSONString(providerIps));
+              // 客户端在此新增一个订阅的功能
+              ABSTRACT_REGISTER.doAfterSubscribe(url);
+          }
+      }
+  ```
+
+* 在`startClient`中，开启发送线程，专门从事将数据包发送给服务端，起到一个解耦的效果
 
 
 
-## 路由层
+### 2.3 监听事件机制实现
+
+**订阅之后开启监听事件，主要用于监听已注册服务的变化**
+
+1. `RpcListenerLoader`: 用于注册与管理监听器。当事件发生时，调用相应的监听器回调方法
+
+   `RpcEvent`为发生事件接口，`RpcListener`为事件监听器接口
+
+   监听器加载器类中主要方法有：
+
+   ```java
+   // 监听器注册
+   public static void registerListener(RpcListener rpcListener) {rpcListenerList.add(rpcListener);}
+   // 监听器初始化
+   public void init() {
+           registerListener(new ServiceUpdateListener());
+           registerListener(new ServiceDestroyListener());
+           registerListener(new ProviderNodeDataChangeListener());
+   }
+   // 将RPC事件发送给注册的RPC监听器
+   public static void sendEvent(RpcEvent rpcEvent){
+       // 调用监听器的回调方法处理事件数据
+       rpcListener.callBack(rpcEvent.getData());
+   }
+   ```
+
+   sendEvent方法实现如下：
+
+   ```java
+       public static void sendEvent(RpcEvent rpcEvent) {
+           log.info("======== sendEvent ========");
+           // 检查rpcListenerList是否为空或为空列表
+           if (CommonUtils.isEmptyList(rpcListenerList)) {
+               return;
+           }
+           // 遍历注册的监听器列表
+           for (RpcListener<?> rpcListener : rpcListenerList) {
+               // 获取监听器的泛型类型参数
+               Class<?> type = getInterfaceT(rpcListener);
+               // 如果监听器的泛型类型参数与RPC事件的类型相同
+               if (type != null && type.equals(rpcEvent.getClass())) {
+                   // 将事件放入线程池中执行
+                   eventThreadPool.execute(new Runnable() {
+                       @Override
+                       public void run() {
+                           try {
+                               log.info("sendEvent callBack: {} ", rpcEvent.getData());
+                               // 调用监听器的回调方法处理事件数据
+                               rpcListener.callBack(rpcEvent.getData());
+                           } catch (Exception e) {
+                               e.printStackTrace();
+                           }
+                       }
+                   });
+               }
+           }
+       }
+   ```
+
+   
+
+2. 主要监听逻辑位于`ZookeeperRegister`中的`watchChildNodeData`方法，如下：
+
+   当监听的Zookeeper服务Node发生变化时，触发Watcher事件，Watcher内调用ListenerLoader方法（事件为方法参数），由ListenerLoader寻找对应的Listener（通过传入的事件与Listener泛型上的事件对比）。
+
+   * `URLChangeWrapper`对应为发生变化的URL包装类：包括serviceName与providerUrlList
+
+   ```java
+       public void watchChildNodeData(String newServerNodePath) {
+           zkClient.watchChildNodeData(newServerNodePath, new Watcher() {
+               @Override
+               public void process(WatchedEvent watchedEvent) {
+                   log.info("[watchChildNodeData ]" + watchedEvent);
+                   String path = watchedEvent.getPath();
+                   log.info("收到子节点" + path + "数据变化");
+                   List<String> childrenDataList = zkClient.getChildrenData(path);
+                   if (CommonUtils.isEmptyList(childrenDataList)) {
+                       watchChildNodeData(path);
+                       return;
+                   }
+                   SUrlChangeWrapper urlChangeWrapper = new SUrlChangeWrapper();
+                   Map<String, String> nodeDetailInfoMap = new HashMap<>();
+                   for (String providerAddress : childrenDataList) {
+                       String nodeDetailInfo = zkClient.getNodeData(path + "/" + providerAddress);
+                       nodeDetailInfoMap.put(providerAddress, nodeDetailInfo);
+                   }
+                   urlChangeWrapper.setNodeDataUrl(nodeDetailInfoMap);
+                   urlChangeWrapper.setProviderUrl(childrenDataList);
+                   urlChangeWrapper.setServiceName(path.split("/")[2]);
+                   RpcEvent rpcEvent = new RpcUpdateEvent(urlChangeWrapper);
+                   RpcListenerLoader.sendEvent(rpcEvent);
+                   // 收到回调之后再注册一次监听，这样能保证一直都收到消息
+                   watchChildNodeData(path);
+                   for (String providerAddress : childrenDataList) {
+                       watchNodeDataChange(path + "/" + providerAddress);
+                   }
+               }
+           });
+       }
+   ```
+
+### 2.4 ConnectionHandler实现
+
+按照单一职责的设计原则，将与连接有关的功能都统一封装在了一起。
+
+主要用于Netty在客户端与服务端之间建立连接、断开连接、按照服务名获取连接等操作。
+
+1. 建立连接逻辑如下：`connect`方法
+
+   ```java
+   // 将服务提供者的 IP 地址拆分成 IP 和端口号
+   String[] providerAddress = providerIp.split(":");
+   String ip = providerAddress[0];
+   Integer port = Integer.parseInt(providerAddress[1]);
+   // 关键代码：创建ChannelFuture，即与目的服务简历底层通信连接
+   // 使用 bootstrap 对象建立与服务提供者的连接，这是一个同步操作，会等待连接建立完成
+   ChannelFuture channelFuture = bootstrap.connect(ip, port).sync();
+   ProviderNodeInfo providerNodeInfo = ServiceUrl.buildURLFromUrlStr(providerURLInfo);
+   // 创建 ChannelFutureWrapper 对象，将来可以从这个对象中获取与服务端的连接
+   ChannelFutureWrapper channelFutureWrapper = new ChannelFutureWrapper();
+   channelFutureWrapper.setChannelFuture(channelFuture);
+   channelFutureWrapper.setHost(ip);
+   channelFutureWrapper.setPort(port);
+   channelFutureWrapper.setWeight(providerNodeInfo.getWeight());
+   channelFutureWrapper.setGroup(providerNodeInfo.getGroup());
+   // 将服务提供者的 IP 地址添加到 SERVER_ADDRESS 集合中，用于跟踪已连接的服务提供者
+   SERVER_ADDRESS.add(providerIp);
+   // 获取与特定服务名称关联的连接信息列表
+   List<ChannelFutureWrapper> channelFutureWrappers = CONNECT_MAP.get(providerServiceName);
+   // 如果列表为空，则创建一个新的空列表
+   if (CommonUtils.isEmptyList(channelFutureWrappers)) {
+       channelFutureWrappers = new ArrayList<>();
+   }
+   // 将新建立的连接信息添加到与服务名称关联的连接信息列表中，并将更新后的列表存储回 CONNECT_MAP 中
+   channelFutureWrappers.add(channelFutureWrapper);
+   // 将连接添加到CONNECT_MAP中
+   // 连接CONNECT_MAP -> key：需要调用的serviceName
+   //				  -> value：与多个服务提供者建立的连接，为List
+   CONNECT_MAP.put(providerServiceName, channelFutureWrappers);
+   // 为服务提供者构建一个 Selector 对象，Selector 对象中存储了该服务提供者对应的服务名称
+   Selector selector = new Selector();
+   selector.setProviderServiceName(providerServiceName);
+   // 刷新路由信息
+   // SERVICE_ROUTER_MAP.put(selector.getProviderServiceName(), arr);
+   ROUTER.refreshRouterArr(selector);
+   ```
+
+2. 获取连接逻辑如下：`getChannelFuture`方法
+
+   每个服务可以有多个服务提供者（对应于多个物理机器）
+
+   负载均衡策略：默认走随机策略获取ChannelFuture
+
+   ```java
+   String providerServiceName = rpcInvocation.getTargetServiceName();
+   
+   ChannelFutureWrapper[] channelFutureWrappers = SERVICE_ROUTER_MAP.get(providerServiceName);
+   List<ChannelFutureWrapper> channelFutureWrappersList = new ArrayList<>(channelFutureWrappers.length);
+   for (int i = 0; i < channelFutureWrappers.length; i++) {
+       channelFutureWrappersList.add(channelFutureWrappers[i]);
+   }
+   //在客户端会做分组的过滤操作
+   //这里不能用Arrays.asList 因为它所生成的list是一个不可修改的list
+   CLIENT_FILTER_CHAIN.doFilter(channelFutureWrappersList, rpcInvocation);
+   Selector selector = new Selector();
+   selector.setProviderServiceName(providerServiceName);
+   selector.setChannelFutureWrappers(channelFutureWrappers);
+   ChannelFuture channelFuture = ROUTER.select(selector).getChannelFuture();
+   return channelFuture;
+   ```
+
+   
+
+
+
+## 3. 路由层
+
+同一个服务可能对应着多个服务提供者，因此当客户端请求服务时，需要通过负载均衡策略从中选择一个合适的服务提供者。
 
 实现了**随机路由**和**轮询路由** 两大类
 
+基于 `SERVICE_ROUTER_MAP` 实现
+
+```java
+public static Map<String, ChannelFutureWrapper[]> SERVICE_ROUTER_MAP = new ConcurrentHashMap<>();
+```
+
+* key为服务提供者名字，value为对应的连接数组
+
+SERVICE_ROUTER_MAP集合的内部存储结构如下：
+
+![image-20231119123615040](https://gitee.com/poldroc/typora-drawing-bed01/raw/master/imgs/202311191236170.png)
 
 
 
+### 3.1 带权重的随机选取策略
 
-## 序列化层
+`com.poldroc.rpc.framework.core.router.RandomRouterImpl`
 
-对接市面上常见的序列化技术框架: Hessian2、Kryo、JDK、FastJson
+自定义随机选取逻辑，将转化后的连接数组存入 SERVICE_ROUTER_MAP 中
+
+虽然是随机选取，但是权重值越大，被选取的次数也会越多
+
+默认初始情况下weight值为100
+
+### 3.2 轮询策略
+
+`com.poldroc.rpc.framework.core.router.RotateRouterImpl`
+
+直接按照添加的先后顺序获取连接，将转化后的连接数组存入 SERVICE_ROUTER_MAP 中
+
+### 3.3 获取连接实现
+
+从`SERVICE_ROUTER_MAP`中按照服务的key查询到对应的服务调用顺序数组，接下来就是对该数组进行轮询获取连接，`ChannelFutureRefWrapper`类就是专门实现轮训效果，
+
+它的本质就是通过取模计算：
+
+```java
+public class ChannelFuturePollingRef {
+    private AtomicLong referenceTimes = new AtomicLong(0);
+    public ChannelFutureWrapper getChannelFutureWrapper(ChannelFutureWrapper[] arr){
+        long i = referenceTimes.getAndIncrement();
+        int index = (int) (i % arr.length);
+        return arr[index];
+    }
+}
+```
+
+### 3.4 权重更新事件
+
+每个服务提供者在注册服务时默认的权重初始值为100。当该值被修改后，触发权重更新事件，修改对应的 SERVICE_ROUTER_MAP
+
+该更新事件也是通过Watcher与自定义的监听事件机制实现，参考 `2.3`
+
+>  `com.poldroc.rpc.framework.core.router.RandomRouterImpl#updateWeight`
+
+```java
+    /**
+     * 更新特定服务的服务提供者权重
+     * @param sUrl 服务地址
+     */
+    @Override
+    public void updateWeight(ServiceUrl sUrl) {
+        // 服务节点的权重
+        List<ChannelFutureWrapper> channelFutureWrappers = CONNECT_MAP.get(sUrl.getServiceName());
+        // 根据每个服务提供者的权重计算一个权重数组
+        Integer[] weightArr = createWeightArr(channelFutureWrappers);
+        // 根据权重数组生成一个随机数组
+        Integer[] randomArr = createRandomArr(weightArr);
+        // 根据随机数组生成一个调用顺序数组
+        ChannelFutureWrapper[] arr = new ChannelFutureWrapper[randomArr.length];
+
+        for (int i = 0; i < randomArr.length; i++) {
+            arr[i] = channelFutureWrappers.get(randomArr[i]);
+        }
+        // 更新路由器的映射，使用新的有序数组更新该服务
+        SERVICE_ROUTER_MAP.put(sUrl.getServiceName(), arr);
+
+    }
+```
 
 
 
+## 4. 序列化层
+
+引入多种序列化策略，由用户自行配置与选择对应的策略
+
+* Hessian2
+* Kryo
+* JDK
+* FastJson
+
+### 4.1 序列化工厂
+
+创建序列化工厂接口，定义接口方法：serialize与deserialize（均为范型方法）
+
+具体的序列化策略去实现该工厂类。
+
+-   SerializeFactory
+    -   FastJsonSerializeFactory
+    -   HessianSerializeFactory
+    -   KryoSerializeFactory
+    -   JdkSerializeFactory
+
+### 4.2 序列化策略配置
+
+序列化策略在Server与Client初始化时从配置文件中加载
 
 
-## 当前框架设计回顾
+
+## 5. 责任链
+
+### 当前框架设计回顾
 
 目前我们Rpc框架的基本设计架构如下图所示，除了简单的客户端发送请求抵达服务端之外，还新增了以下几个角色：
 
@@ -406,9 +763,42 @@ while (...) {
 
 每次请求都最好能有一次请求调用的记录，方便开发者调试。日志的内容一般会关注以下几个点：调用方信息，请求的具体服务的哪个方法，请求时间。
 
+### 5.1 责任链模式的意义
 
+传统模式中，客户端需要在发送请求之前，逐个的调用过滤请求的方法；服务端在接受请求之前，也需要逐个调用过滤请求的方法
 
+这种模式下，代码耦合度高，且扩展性差。
 
+而采用责任链模式可以带来：
+
+-   发送者与接收方的处理对象类之间解耦。
+-   封装每个处理对象，处理类的最小封装原则。
+-   可以任意添加处理对象，调整处理对象之间的顺序，提高了维护性和可拓展性，可以根据需求新增处理类，满足开闭原则。
+-   增强了对象职责指派的灵活性，当流程发生变化的时候，可以动态地改变链内的调动次序可动态的新增或者删除。
+-   责任链简化了对象之间的连接。每个对象只需保持一个指向其后继者的引用，不需保持其他所有处理者的引用，这避免了使用众多的 if 或者 if···else 语句。
+-   责任分担。每个类只需要处理自己该处理的工作，不该处理的传递给下一个对象完成，明确各类的责任范围，符合类的单一职责原则。
+
+### 5.2 责任链设计
+
+```
+├── Filter.java
+├── ClientFilter.java                  -> 继承Filter接口
+├── ServerFilter.java				   -> 继承Filter接口
+├── client
+│   ├── ClientFilterChain.java		-> 客户端过滤链
+│   ├── ClientLogFilterImpl.java        -> 日志过滤器实现类
+│   ├── DirectInvokeFilterImpl.java     -> IP过滤器实现类
+│   └── GroupFilterImpl.java            -> 分组过滤器实现类
+└── server
+    ├── ServerFilterChain.java		-> 服务器过滤链
+    ├── ServerLogFilterImpl.java        -> 日志过滤器实现类
+    └── ServerTokenFilterImpl.java      -> Token安全校验过滤器实现类
+
+```
+
+1.   首先创建Filter接口，然后分别创建服务器与客户端对应的接口，继承Filter接口
+2.   分别创建服务器与客户端过滤链，用于存放过滤器实现类，并遍历过滤器实现类集合，执行过滤方法
+3.   依次实现过滤器实现类
 
 **客户端的责任链插入位置**
 
@@ -426,11 +816,13 @@ com.poldroc.rpc.framework.core.server.ServerHandler#channelRead
 
 在 ChannelInboundHandlerAdapter 内部加入过滤链说明此事请求数据已经落入到了server端的业务线程池中，接下来需要通过责任链的每一个环节进行校对，最终确认是否可以执行目标函数。
 
+后续引入限流组件会将服务端过滤器划分为了**前置过滤器**和**后置过滤器**
 
 
 
 
-## SPI(Service Provider Interface)
+
+## 6.  SPI(Service Provider Interface)
 
 > 是一种通过外界配置来加载具体代码内容的技术手段
 
@@ -540,6 +932,24 @@ public class ExtensionLoader {
 }
 ```
 
+在需要加载资源时（初始化序列化框架、初始化过滤链、初始化路由策略、初始化注册中心），使用SPI加载类去实现
+
+从而避免了在代码中通过switch语句以硬编码的方式选择资源
+
+基本使用：
+
+```java
+        // 初始化路由策略
+        EXTENSION_LOADER.loadExtension(Router.class);
+        String routerStrategy = clientConfig.getRouterStrategy();
+        LinkedHashMap<String, Class> routerMap = EXTENSION_LOADER_CLASS_CACHE.get(Router.class.getName());
+        Class routerClass = routerMap.get(routerStrategy);
+        if (routerClass == null) {
+            throw new RuntimeException("no match routerStrategy for " + routerStrategy);
+        }
+        ROUTER = (Router) routerClass.newInstance();
+```
+
 
 
 至此，整套框架的大致模型如下：
@@ -550,13 +960,47 @@ public class ExtensionLoader {
 
 
 
-## 高并发
+## 7. 高并发
 
-- 如何使用阻塞队列对高并发请求的一个削弱
-- 业务线程池的引入保证请求的处理吞吐能力
-- 异步调用的简单实现
+- **如何使用阻塞队列对高并发请求的一个削弱**
+- **业务线程池的引入保证请求的处理吞吐能力**
+- **异步调用的简单实现**
 
-### 服务端优化
+### 7.1 串行同步阻塞问题
+
+NIO线程常见的阻塞情况，一共两大类：
+
+-   无意识：在ChannelHandler中编写了可能导致NIO线程阻塞的代码，但是用户没有意识到，包括但不限于查询各种数据存储器的操作、第三方服务的远程调用、中间件服务的调用、等待锁等。
+
+-   有意识：用户知道有耗时逻辑需要额外处理，但是在处理过程中翻车了，比如主动切换耗时逻辑到业务线程池或者业务的消息队列做处理时发生阻塞，最典型的有对方是阻塞队列，锁竞争激烈导致耗时，或者投递异步任务给消息队列时异机房的网络耗时，或者任务队列满了导致等待，等等。
+
+服务端接收到消息之后
+
+1. 需要对消息进行解码，使字节序列变为消息对象。
+
+2. 将消息对象与上下文传入ServerHandler中进行进一步处理。
+
+   可能某个业务Handler处理流程非常耗时，如查询数据库。为了避免线程被长时间占用，采用异步消费进行处理
+
+客户端通过动态代理层封装RpcInvocation对象并将其放入SEND_QUEUE队列后，需要同步阻塞等待最终处理的响应结果
+
+-   可以将此处改为同步与异步两种方式
+
+### 7.2 异步设计
+
+1. 对于服务端：
+
+   当请求抵达服务器时，将其直接丢入业务阻塞队列中，然后开辟一个新的线程，从阻塞队列中循环获取Handler请求任务。
+
+   将获取到的任务对象交付于业务线程池进行消费处理。
+
+2. 对于客户端：
+
+   在RpcReferenceWrapper中设置一个isAsync字段，用于判断是否为异步。
+
+   若该字段为True，则在动态代理层中，不需要同步阻塞等待响应结果，直接返回null即可。
+
+### 7.3 服务端优化
 
 #### 使用堵塞队列提升吞吐性能
 
@@ -697,7 +1141,7 @@ public class ServerChannelDispatcher {
 
 
 
-### 客户端优化
+### 7.4 客户端优化
 
 例如当我们遇到一些只需要触发接口调用，但是对于接口返回内容并不关心的这类函数，就没有必要再在代码中监听对方的消息返回行为了，此时可以采用**异步发送的策略**进行实现。
 
@@ -778,7 +1222,7 @@ public class JDKClientInvocationHandler implements InvocationHandler {
 
 
 
-## 容错层
+## 8. 容错层
 
 - **服务端异常返回给到调用方展示**
 - **客户端调用可以支持超时重试** 
@@ -786,7 +1230,7 @@ public class JDKClientInvocationHandler implements InvocationHandler {
 
 
 
-#### 服务端异常正常返回
+#### 8.1 服务端异常正常返回
 
 设计思路是：**将服务端的异常信息统一采集起来，返回给到调用方并且将堆栈记录打印。**
 
@@ -852,15 +1296,36 @@ public class RpcInvocation {
 
 ```
 
+实现流程如下：
 
+1. RpcInvocation类中添加异常字段
+
+   ```java
+   private Throwable e;
+   ```
+
+2. 服务端处理接收到的请求时，用try-catch进行捕获，并设置异常
+
+   ```java
+   // 业务异常
+   rpcInvocation.setE(e);
+   ```
+
+3. 客户端处理器ClientHandler中，读取响应结果时，对异常进行判断。如果该字段不为空，则打印异常
+
+   ```java
+   if (rpcInvocation.getE() != null) {
+       rpcInvocation.getE().printStackTrace();
+   }
+   ```
 
 e字段用于存储服务端抛出的异常信息，而相关的异常信息则是在服务端的com.poldroc.rpc.framework.core.dispatcher.ServerChannelDispatcher任务中进行捕获。
 
-捕获原理：在服务端获取到目标函数和传入参数之后，需要通过反射来执行相关调用，可以在外加一层try catch去捕获该部分的异常信息：
+捕获原理：在服务端获取到目标函数和传入参数之后，需要通过反射来执行相关调用，可以在外加一层try catch去捕获该部分的异常信息
 
 
 
-#### 超时重试机制
+#### 8.2 超时重试机制
 
 关于接口超时重试这类机制，其实建议在实际使用的时候再三斟酌下，**并不是所有的接口在超时的时候都需要进行重试，面对一些非幂等性的接口调用情况，重试机制就应该谨慎使用**。下边我们来深入分析下，什么样的场景适合使用重试机制。
 
@@ -882,11 +1347,11 @@ public static void main(String[] args) throws Throwable {
     rpcReferenceWrapper.setGroup("dev");
     rpcReferenceWrapper.setServiceToken("token-a");
     rpcReferenceWrapper.setTimeOut(3000);
-    //超时重试次数
+    // 超时重试次数
     rpcReferenceWrapper.setRetry(0);
     rpcReferenceWrapper.setAsync(false);
     DataService dataService = rpcReference.get(rpcReferenceWrapper);
-    //订阅服务
+    // 订阅服务
     client.doSubscribeService(DataService.class);
 
     ConnectionHandler.setBootstrap(client.getBootstrap());
@@ -911,7 +1376,7 @@ public static void main(String[] args) throws Throwable {
 
 
 
-#### 服务端保护机制
+#### 8.3 服务端保护机制
 
 - 控制业务应用整体的连接上限；
 - 单个服务请求的限流。
@@ -924,27 +1389,17 @@ public static void main(String[] args) throws Throwable {
 
 所以我们现在需要在原有的代码基础上加上以下实现：**对服务端的要有一个统一的连接数控制，比如最大连接限制为512，当前连接数超过512则超出的部分直接拒绝。**
 
-首先需要定义一个限制最大连接数的Handler类：
+限制服务端的总体连接数，超过指定连接数时，拒绝剩余的连接请求。
+
+通过为ServerBootstrap设置最大连接数处理器，及时地对连接进行释放。
+
+最大连接数在服务端的配置文件中配置。
+
+``` java
+bootstrap.handler(new MaxConnectionLimitHandler(serverConfig.getMaxConnections()));
+```
 
 ```java
-package com.poldroc.rpc.framework.core.server;
-
-import io.netty.channel.*;
-import lombok.extern.slf4j.Slf4j;
-
-import java.util.Collections;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.LongAdder;
-
-/**
- * 服务端最大连接数限制处理器
- * @author Poldroc
- * @date 2023/10/6
- */
 @ChannelHandler.Sharable
 @Slf4j
 public class MaxConnectionLimitHandler extends ChannelInboundHandlerAdapter {
@@ -1050,22 +1505,18 @@ public class MaxConnectionLimitHandler extends ChannelInboundHandlerAdapter {
 
 **限流部分的主要核心思想是采用了Semaphore的组件进行实践。**
 
-`Semaphore` 是 Java JDK 中提供的一种同步工具，用于控制多线程并发访问共享资源。它是一种信号量机制，可以帮助防止竞态条件，并协调多线程之间对关键代码段的访问。`Semaphore` 是 Java.util.concurrent 包中的一部分，从 Java 5 开始引入。
-
-`Semaphore` 主要用于两种情况：
-
-1. **Binary Semaphore（二进制信号量）**：这种类型的信号量只能有两个状态，通常用 0 和 1 表示。它通常被称为互斥锁（Mutex），用于实现互斥访问，即同一时刻只允许一个线程访问共享资源。
-   - `acquire` 操作：如果信号量的值大于 0，将其减 1，否则阻塞当前线程，直到信号量变为非零。
-   - `release` 操作：增加信号量的值 by 1。
-2. **Counting Semaphore（计数信号量）**：这种类型的信号量可以有一个非负整数值，用于控制对有限数量资源的访问。它允许多个线程同时访问资源，但有一个上限值。
-   - `acquire` 操作：如果信号量的值大于 0，将其减 1，否则阻塞当前线程，直到信号量变为非零。
-   - `release` 操作：增加信号量的值 by 1。
+`Semaphore` 是 Java JDK 中提供的一种同步工具，用于控制多线程并发访问共享资源。它是一种信号量机制，可以帮助防止竞态条件，并协调多线程之间对关键代码段的访问。
 
 它提供了acquire和tryAcquire两种方法供开发者调用，在Sem aphore的内部其实是有一个计数器，每次向它申请许可的时候如果计数器不为0，则申请通过，如果计数器为0则会处于堵塞（acquire），或者立马断开（tryAcquire），又或者等待一定时间后才断开（tryAcquire可以指定等待时间）。当资源使用完毕之后需要执行release操作，将计数器归还。
 
+使用`tryAcquire`则是一种“快速响应”的解决思路，当获取申请失败后，不会堵塞当前线程，而是立马通知客户端调用异常，然后发起二次重试，路由到其他节点。**至少这种策略相比于acquire来说不存在请求堆积，导致服务崩溃的风险因素。**
 
+采用 **Semaphore** 进行流量控制，在每一个服务进行注册时，便指定服务对应的最大连接数。
 
-使用tryAcquire则是一种“快速响应”的解决思路，当获取申请失败后，不会堵塞当前线程，而是立马通知客户端调用异常，然后发起二次重试，路由到其他节点。**至少这种策略相比于acquire来说不存在请求堆积，导致服务崩溃的风险因素。**
+```java
+// 设置服务端的限流器
+SERVER_SERVICE_SEMAPHORE_MAP.put(interfaceClass.getName(), new ServerServiceSemaphoreWrapper(serviceWrapper.getLimit()));
+```
 
 
 
@@ -1077,22 +1528,9 @@ public class MaxConnectionLimitHandler extends ChannelInboundHandlerAdapter {
 
 请求数据在执行实际业务函数之前需要会经过**前置过滤器**的逻辑，而限流组件则是在前置过滤器的最后一环，主要负责tryAcquire环节。
 
+> 当当前连接数超过最大连接数时，根据Semaphore的tryAcquire原理，会直接返回False，据此判断流量超峰，抛出异常。
+
 ```java
-package com.poldroc.rpc.framework.core.filter.server;
-
-import com.poldroc.rpc.framework.core.common.RpcInvocation;
-import com.poldroc.rpc.framework.core.common.ServerServiceSemaphoreWrapper;
-import com.poldroc.rpc.framework.core.common.annotations.SPI;
-import com.poldroc.rpc.framework.core.common.exception.MaxServiceLimitRequestException;
-import com.poldroc.rpc.framework.core.filter.ServerFilter;
-import lombok.extern.slf4j.Slf4j;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.concurrent.Semaphore;
-
-import static com.poldroc.rpc.framework.core.common.cache.CommonServerCache.SERVER_SERVICE_SEMAPHORE_MAP;
-
 /**
  * 请求数据在执行实际业务函数之前需要会经过前置过滤器的逻辑，
  * 而限流组件则是在前置过滤器的最后一环，主要负责tryAcquire环节
@@ -1128,7 +1566,7 @@ public class ServerServiceBeforeLimitFilterImpl implements ServerFilter {
 
 - 后置过滤器
 
-当业务核心逻辑执行完毕之后，会进入到**后置过滤器**中，这里面可以执行relase操作。
+当业务核心逻辑执行完毕之后，会进入到**后置过滤器**中，这里面可以执行relase操作，也就是对Semaphore持有资源数加1。
 
 ```java
 package com.poldroc.rpc.framework.core.filter.server;
@@ -1160,7 +1598,7 @@ public class ServerServiceAfterLimitFilterImpl implements ServerFilter {
 
 
 
-## 接入层
+## 9. 接入层
 
 SpringBoot的使用率更广泛，接入难度也比较低，所以下边会采用以SpringBoot自动装配的思路去设计这个接入层的代码
 
@@ -1170,5 +1608,47 @@ SpringBoot的使用率更广泛，接入难度也比较低，所以下边会采�
 
 提供了starter的设计思路，遵循了“约定大于配置”的这种理念，只需要给对应的中间件编写好一个自动配置类以及一份spi文件，最后交给SpringBoot去扫描即可，整体难度会比较低。
 
+### 9. 1 定义注解
 
+1. 客户端对需要调用的服务添加 `@ARpcReference` 注解
+
+   在Spring容器启动过程中，将带有此注解的字段进行构建，**让它们的句柄可以指向一个代理类**
+
+   **这样在使用UserService和OrderService类对应的方法时候就会感觉到似乎在执行本地调用一样，降低开发者的代码编写难度。**
+
+2. 服务端通过 `@ARpcService` 注解对服务进行暴露，将其注入到Spring容器中
+
+   -   该注解内部添加了 `@Component` 注解，因此能被扫描到Spring容器中
+
+### 9.2 定义自动装配对象类
+
+#### 9.2.1 服务端
+
+`com.poldroc.rpc.framework.spring.starter.config.RpcServerAutoConfiguration`
+
+服务端自动装配流程
+
+1.   初始化服务端配置
+     -   从 `rpc.properties` 中读取相关配置并写入config
+     -   初始化线程池、队列
+     -   通过 `SPI` 初始化序列化框架、过滤链
+     -   初始化并注册启动事件监听器
+
+2.   Spring从容器中筛选出带有 `@ARpcService` 注解的类，以Map形式封装
+3.   将每一个Map中的对象封装为 `ServiceWrapper` 对象，并从注解中提取并设置相应的属性，将service注册到注册中心
+4.   RPC服务暴露给RPC框架，以便客户端可以调用
+5.   开启服务端，准备接收任务
+
+#### 9.2.2 客户端
+
+`com.poldroc.rpc.framework.spring.starter.config.RpcClientAutoConfiguration`
+
+客户端自动装配流程
+
+1.   初始化客户端配置
+     -   从 `rpc.properties` 中读取相关配置并写入config
+     -   通过 `SPI` 初始化动态代理
+2.   获取带有 `@ARpcReference` 注解的类，从注解中提取并设置相应的属性为RpcReferenceWrapper
+3.   获得对应代理对象，设置回Bean对象的字段中，以便应用程序可以通过这些字段访问RPC服务
+4.   在注册中心中订阅对应的服务
 
